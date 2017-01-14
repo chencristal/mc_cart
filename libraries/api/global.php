@@ -40,12 +40,12 @@ function mailchimp_log($action, $message, $data = array())
 {
     // refer to woocommerce plugin      // chen_check
     if ($message === null)
-        file_put_contents('2.txt', $action." ==>> NULL  ", FILE_APPEND|LOCK_EX);
+        file_put_contents('2.txt', $action." ==>> NULL  \r\n", FILE_APPEND|LOCK_EX);
     else
-        file_put_contents('2.txt', $action." ==>> ".print_r($message, true)."  ", FILE_APPEND|LOCK_EX);
+        file_put_contents('2.txt', $action." ==>> ".print_r($message, true)."  \r\n", FILE_APPEND|LOCK_EX);
 
     if (count($data) > 0)
-        file_put_contents('2.txt', $action."(data) ==>> ".print_r($data, true)."  ", FILE_APPEND|LOCK_EX);
+        file_put_contents('2.txt', $action."(data) ==>> ".print_r($data, true)."  \r\n", FILE_APPEND|LOCK_EX);
 
     return TRUE;
 }

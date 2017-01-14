@@ -72,19 +72,20 @@ class Mc_cart_mcp
     // ------------------------------------------------------------------------
 
     private function initialize() {
+        $this->general_settings = ee()->settings_model->get_all_settings();
+
         if ($this->initialized === TRUE)
             return;
 
         //
         // Get the generic setting values
         //
-        $this->general_settings = ee()->settings_model->get_all_settings();
         $this->locale_list = MailChimp_Api_Locales::simple();
         $this->currency_list = MailChimp_WooCommerce_CurrencyCodes::lists();
         $this->timezone_list = get_timezone_list();
 
         // check store sync
-        if ($this->general_settings['mc_store_sync'] == 'y') {
+        if ($this->get_general_setting('mc_store_sync') == 'y') {
             $reset_sync = false;
             if (!isset($this->general_settings['mc_list_id']) ||
                 !isset($this->general_settings['mc_api_key'])) {
@@ -440,6 +441,8 @@ class Mc_cart_mcp
 
     private function save_settings()
     {
+        $this->initialize();
+
         $data = array(
             'mc_api_key' => ee()->input->post('mc_api_key'),
             'mc_debugging' => ee()->input->post('mc_debugging'),
@@ -475,8 +478,10 @@ class Mc_cart_mcp
 
     private function save_store_settings()
     {
+        $this->initialize();
+
         $data = array(
-            'mc_list_id' => ee()->input->post('mc_list_id'),
+            'mc_list_id' => ee()->input->post('mc_list_id')?:$this->get_general_setting('mc_list_id'),
             'mc_store_name' => ee()->input->post('mc_store_name'),
             'mc_store_email' => ee()->input->post('mc_store_email'),
             'mc_store_address' => ee()->input->post('mc_store_address'),
@@ -500,6 +505,7 @@ class Mc_cart_mcp
         if ($this->sync_store($data) === true) {
 
             $data['mc_store_sync'] = 'y';
+
             ee()->settings_model->save_settings($data);
             ee('CP/Alert')->makeInline('shared-form')
                 ->asSuccess()
@@ -537,6 +543,8 @@ class Mc_cart_mcp
     // -----------------------------------------------------------------------------
 
     public function resync() {
+        $this->initialize();
+
         $data = array(
             'mc_store_sync' => 'n'
         );
@@ -591,6 +599,8 @@ class Mc_cart_mcp
      */
     private function cartthrob_enabled()
     {
+        $this->initialize();
+
         $query = ee()->db->select('module_name')
             ->where_in('module_name', 'Cartthrob')
             ->get('modules');
@@ -605,6 +615,8 @@ class Mc_cart_mcp
     }
 
     private function sync_store($data) {
+
+        $this->initialize();
 
         $site_url = mailchimp_get_store_id();
         $new = false;

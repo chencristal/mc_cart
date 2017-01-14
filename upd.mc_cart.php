@@ -82,13 +82,10 @@ class Mc_cart_upd {
             ->delete('extensions');
 
         //should we do this?
-        //nah, do it yourself if you really want to
-        /*
         foreach (array_keys($this->tables) as $table)
         {
             ee()->dbforge->drop_table($table);
         }
-        */
 
         return TRUE;
     }

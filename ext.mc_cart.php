@@ -54,16 +54,16 @@ class Mc_cart_ext
     }
 
     private function initialize() {
-        if ($this->initialized === TRUE)
-            return;
-
         //
         // Get the generic setting values
         //
         $this->general_settings = ee()->settings_model->get_all_settings();
 
+        if ($this->initialized === TRUE)
+            return;
+
         // check store sync
-        if ($this->general_settings['mc_store_sync'] == 'y') {
+        if ($this->get_general_setting('mc_store_sync') == 'y') {
             $reset_sync = false;
             if (!isset($this->general_settings['mc_list_id']) ||
                 !isset($this->general_settings['mc_api_key'])) {
@@ -126,6 +126,10 @@ class Mc_cart_ext
 
     public function mc_cartthrob_pre_process($data) {
         $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        return true;
     }
 
     //
@@ -133,6 +137,23 @@ class Mc_cart_ext
     //
     public function mc_cartthrob_create_member($data, &$obj) {
         $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        return true;
+    }
+
+    // Check store sync (Should be called after initialize())
+    private function check_store_sync() {
+        $api_key = $this->get_general_setting('mc_api_key');
+        $list_id = $this->get_general_setting('mc_list_id');
+        $store_sync = $this->get_general_setting('mc_store_sync');
+
+        if (empty($api_key) || empty($list_id) || $list_id == '0' || $store_sync != 'y') {
+            return false;
+        }
+
+        return true;
     }
 
     // Subscribe when member login
@@ -140,6 +161,8 @@ class Mc_cart_ext
         $this->initialize();
         // $user_session = ee()->cartthrob_session->to_array();
         // $site_url = md5(ee()->config->item('site_url'));
+
+        if ($this->check_store_sync() == false) return false;
 
         $email = $userdata->email;
         $api_key = $this->get_general_setting('mc_api_key');
@@ -150,10 +173,6 @@ class Mc_cart_ext
             'FNAME' => $userdata->screen_name,
             'LNAME' => ''
         );
-
-        if (empty($api_key) || empty($list_id) || $list_id == '0' || $store_sync != 'y') {
-            return false;
-        }
 
         try {
             $ret = $this->api_loader->member($list_id, $email);
@@ -227,6 +246,8 @@ class Mc_cart_ext
     public function mc_after_channel_entry_save($entry, $values) {
 
         $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
 
         //
         // Get products channel id
@@ -332,12 +353,20 @@ class Mc_cart_ext
 
 
     public function mc_cartthrob_add_to_cart_end($item) {
-        // $this->initialize();
+        $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
 
         mc_log($item);
+
+        return true;
     }
 
     public function mc_cartthrob_add_to_cart_start() {
+        $this->initialize();
 
+        if ($this->check_store_sync() == false) return false;
+
+        return true;
     }
 }
