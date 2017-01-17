@@ -30,7 +30,28 @@ class Mc_cart_upd {
                 'null' => TRUE,
                 'default' => 0,
             )
-        )
+        ),
+        'mc_carts' => array(
+            'id' => array(
+                'type' => 'varchar',
+                'constraint' => 255,
+            ),
+            'email' => array(
+                'type' => 'varchar',
+                'constraint' => 100,
+            ),
+            'user_id' => array(
+                'type' => 'int',
+                'constraint' => 11,
+                'null' => TRUE,
+            ),
+            'cart' => array(
+                'type' => 'text',                
+            ),
+            'created_at' => array(
+                'type' => 'datetime',
+            ),
+        ),
     );
 
     /**
@@ -54,8 +75,12 @@ class Mc_cart_upd {
             'cartthrob_pre_process' => 'mc_cartthrob_pre_process',
 
             'after_channel_entry_save' => 'mc_after_channel_entry_save',
+            
             'cartthrob_add_to_cart_end' => 'mc_cartthrob_add_to_cart_end',
-            'cartthrob_add_to_cart_start' => 'mc_cartthrob_add_to_cart_start',
+            'cartthrob_update_cart_end' => 'mc_cartthrob_update_cart_end',
+            'cartthrob_delete_from_cart_end' => 'mc_cartthrob_delete_from_cart_end',
+
+            'cartthrob_on_authorize' => 'mc_cartthrob_on_authorize',
 
             'member_member_login_multi' => 'mc_member_login',
             'member_member_login_single' => 'mc_member_login',
@@ -82,10 +107,10 @@ class Mc_cart_upd {
             ->delete('extensions');
 
         //should we do this?
-        foreach (array_keys($this->tables) as $table)
+        /*foreach (array_keys($this->tables) as $table)
         {
             ee()->dbforge->drop_table($table);
-        }
+        }*/
 
         return TRUE;
     }
