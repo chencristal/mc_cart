@@ -120,9 +120,9 @@ function getArrayValue($array, $path)
 // chen_debug
 function mc_log($log_message) {
     if ($log_message === null)
-        file_put_contents('2.txt', "NULL\r\n", FILE_APPEND|LOCK_EX);
+        file_put_contents('2.txt', date("Y-m-d H:i:s")." : NULL\r\n", FILE_APPEND|LOCK_EX);
     else
-        file_put_contents('2.txt', print_r($log_message, true)."\r\n", FILE_APPEND|LOCK_EX);
+        file_put_contents('2.txt', date("Y-m-d H:i:s")." : ".print_r($log_message, true)."\r\n", FILE_APPEND|LOCK_EX);
 }
 
 // EOF
