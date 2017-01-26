@@ -20,11 +20,11 @@ class Settings_model extends CI_Model
         $this->db->where('member_id', $member_id);
         $result = $this->db->get($this->subscriber_table)->result_array();
 
-        if (count($result) > 0 && $result[0]['subscribe'] == 'y') {
-            return true;
+        if (count($result) > 0 && $result[0]['subscribe'] != 'y') {
+            return false;
         }
 
-        return false;
+        return true;
     }
 
     public function subscribe($member_id, $value) {

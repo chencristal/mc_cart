@@ -1,6 +1,6 @@
 <?php if ( ! defined('BASEPATH')) exit('No direct script access allowed');
 
-require_once PATH_THIRD.'subscriber/config.php';
+require_once PATH_THIRD.'mc_cart/config.php';
 
 /**
  * Addon Core Module File
@@ -11,6 +11,13 @@ class Mc_cart
 
     public function checkout_subscriber() {
 
+        $member_id = ee()->session->userdata('member_id');
+        $checked = TRUE;
+
+        if ($member_id) {
+            ee()->load->model('settings_model');
+            $checked = ee()->settings_model->get_subscribe($member_id);
+        }
         // if (ee()->session->userdata('member_id')) {
 
             ee()->load->helper('form');
@@ -20,7 +27,7 @@ class Mc_cart
                 'name'      => 'mc_subscriber_check',
                 'id'        => 'mc_subscriber_check',
                 'value'     => 'accept',
-                'checked'   => TRUE,
+                'checked'   => $checked,
             );
 
             $ret = form_fieldset(lang('mc_subscriber_section'),
