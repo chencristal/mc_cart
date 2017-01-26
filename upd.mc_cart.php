@@ -52,6 +52,20 @@ class Mc_cart_upd {
                 'type' => 'datetime',
             ),
         ),
+        'mc_subscribers' => array(
+            'member_id' => array(
+                'type' => 'int',
+                'constraint' => 11,
+            ),
+            'subscribe' => array(
+                'type' => 'varchar',
+                'constraint' => 100,
+                'null' => TRUE,
+            ),
+            'created_at' => array(
+                'type' => 'datetime',
+            ),
+        )
     );
 
     /**
@@ -63,7 +77,7 @@ class Mc_cart_upd {
             "module_name"        => MC_CART_MACHINE,
             "module_version"     => $this->version,
             "has_cp_backend"     => "y",
-            "has_publish_fields" => "n"
+            "has_publish_fields" => "n",
         );
         ee()->db->insert('modules', $data);
 
@@ -71,17 +85,22 @@ class Mc_cart_upd {
         ee()->table_model->update_tables($this->tables);
 
         $this->_register_hooks(array(
+            // member actions
             'cartthrob_create_member' => 'mc_cartthrob_create_member',
-            'cartthrob_pre_process' => 'mc_cartthrob_pre_process',
 
+            // product actions
             'after_channel_entry_save' => 'mc_after_channel_entry_save',
             
+            // cart actions
             'cartthrob_add_to_cart_end' => 'mc_cartthrob_add_to_cart_end',
             'cartthrob_update_cart_end' => 'mc_cartthrob_update_cart_end',
             'cartthrob_delete_from_cart_end' => 'mc_cartthrob_delete_from_cart_end',
 
+            // checkout actions
+            'cartthrob_pre_process' => 'mc_cartthrob_pre_process',
             'cartthrob_on_authorize' => 'mc_cartthrob_on_authorize',
 
+            // login actions
             'member_member_login_multi' => 'mc_member_login',
             'member_member_login_single' => 'mc_member_login',
             'cp_member_login' => 'mc_member_login',

@@ -119,6 +119,21 @@ class Mc_cart_ext
         return $this->default_settings[$key];
     }
 
+    //
+    // Check store sync (Should be called after initialize())
+    //
+    private function check_store_sync() {
+        $api_key = $this->get_general_setting('mc_api_key');
+        $list_id = $this->get_general_setting('mc_list_id');
+        $store_sync = $this->get_general_setting('mc_store_sync');
+
+        if (empty($api_key) || empty($list_id) || $list_id == '0' || $store_sync != 'y') {
+            return false;
+        }
+
+        return true;
+    }
+
 
     public function activate_extension() {
         return TRUE;
@@ -132,21 +147,6 @@ class Mc_cart_ext
         return FALSE;
     }
 
-
-
-
-    //
-    // When checkout form is submitted, but before the data is sent to the payment gateway file.
-    //
-    public function mc_cartthrob_pre_process($data) {
-        $this->initialize();
-
-        if ($this->check_store_sync() == false) return false;
-
-        mc_log('mc_cartthrob_pre_process');
-
-        return true;
-    }
 
     //
     // Called during checkout if you are attempting to create a member during checkout.
@@ -163,23 +163,319 @@ class Mc_cart_ext
 
 
     //
-    // Check store sync (Should be called after initialize())
+    // Subscribe when member login (For the subscribe, it should be changed)
     //
-    private function check_store_sync() {
-        $api_key = $this->get_general_setting('mc_api_key');
-        $list_id = $this->get_general_setting('mc_list_id');
-        $store_sync = $this->get_general_setting('mc_store_sync');
+    public function mc_member_login($userdata) {
 
-        if (empty($api_key) || empty($list_id) || $list_id == '0' || $store_sync != 'y') {
+        $this->initialize();
+        // $user_session = ee()->cartthrob_session->to_array();
+        // $site_url = md5(ee()->config->item('site_url'));
+
+        if ($this->check_store_sync() == false) return false;
+
+        mc_log('member_login => '.$userdata->email);
+    }
+
+    //
+    // Additional processing when add to cart action ends. (refer to `woocommerce_add_to_cart`)
+    // At this point the item data has been aggregated into an item object
+    //
+    public function mc_cartthrob_add_to_cart_end($item) {
+
+        $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        mc_log('cartthrob_add_to_cart_end');
+
+        return $this->handle_cart_updated();
+    }
+
+    
+    //
+    // Additional processing when update cart action ends. (refer to `woocommerce_cart_updated`)
+    //
+    public function mc_cartthrob_update_cart_end() {
+
+        $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        mc_log('cartthrob_update_cart_end');
+
+        return $this->handle_cart_updated();
+
+        /*$customer_info = ee()->cartthrob->cart->customer_info();
+        $ret = ee()->session->cache;*/
+
+        /*$item = ee()->cartthrob->cart->item(0);
+        mc_log($item->price());*/
+
+        /*if (!empty($customer_info['email_address']))
+            mc_log($customer_info);*/
+    }
+
+    //
+    // Additional processing when a delete from cart action is about to end. (refer to `woocommerce_cart_item_removed`)
+    //
+    public function mc_cartthrob_delete_from_cart_end() {
+
+        $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        mc_log('cartthrob_delete_from_cart_end');
+
+        return $this->handle_cart_updated();
+    }
+
+
+    //
+    // Process mailchimp customer subscribe options
+    //
+    private function mc_submit_user($email, $old_email, $subscribe, $merge_vars) {
+
+        $subscribe = ($subscribe == 'y') ? true : false;
+
+        $list_id = $this->get_general_setting('mc_list_id');
+
+        try {
+
+            // see if we have a member.
+            $ret = $this->api_loader->member($list_id, $old_email);
+
+            // if we're updating a member and the email is different, we need to delete the old person
+            if ($old_email != $email)
+            {
+                $this->api_loader->deleteMember($list_id, $old_email);
+                $this->api_loader->subscribe($list_id, $email, $subscribe, $merge_vars);
+
+                mailchimp_log('member.sync', 'Subscriber Swap '.$old_email.' to '.$email, $merge_vars);
+
+                return false;
+            }
+
+            // ok let's update this member
+            $this->api_loader->update($list_id, $email, $subscribe, $merge_vars);
+            mailchimp_log('member.sync', 'Updated Member '.$email, $merge_vars);
+
+        } catch (\Exception $e) {
+
+            if ($e->getCode() == 404) {     // member not found
+                try {
+                    $this->api_loader->subscribe($list_id, $email, $subscribe, $merge_vars);
+
+                    mailchimp_log('member.sync', 'Subscribed Member '.$email, $merge_vars);
+                } catch (\Exception $e) {
+                    mailchimp_log('member.sync', $e->getMessage());
+                }
+
+                return false;
+            }
+
+            mailchimp_log('member.sync', $e->getMessage());
+        }
+
+        return false;
+    }
+
+    //
+    // When checkout form is submitted, but before the data is sent to the payment gateway file.
+    //
+    public function mc_cartthrob_pre_process($options) {
+
+        $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        mc_log('mc_cartthrob_pre_process');
+
+        $subscribe = ee()->input->post('mc_subscriber_check') ? 'y' : 'n';
+
+        $customer_info = ee()->cartthrob->cart->customer_info();
+        $email = $customer_info['email_address'];
+        $merge_vars = array(
+            'FNAME' => $customer_info['first_name'],
+            'LNAME' => $customer_info['last_name'],
+        );
+
+        if ($member_id = ee()->session->userdata('member_id'))      // user logged in already
+        {
+            ee()->settings_model->subscribe($member_id, $subscribe);    // save subscribe option
+
+            $old_email = ee()->session->userdata('email');
+
+            return $this->mc_submit_user($email, $old_email, $subscribe, $merge_vars);
+        }
+        else if (!empty($options['create_user']) && is_array($options['create_user'])) {    // create user when checkout
+
+            $old_email = $options['create_user']['email'];      // get email from `create_user` options
+
+            return $this->mc_submit_user($email, $old_email, $subscribe, $merge_vars);
+        }
+
+        return true;
+    }
+
+    //
+    // Additional processing when the payment has been authorized. (refer to `woocommerce_thankyou`)
+    //
+    public function mc_cartthrob_on_authorize() {
+        
+        $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        mc_log('cartthrob_on_authorize');
+
+        $order_id = ee()->cartthrob->cart->order('order_id');
+
+        // for the debugging and logging
+        // $entry_id = ee()->cartthrob->cart->order('entry_id');
+        // $order_item = ee()->cartthrob->cart->order();
+        // $order_info = ee()->order_model->get_order($entry_id);
+        // $customer_info = ee()->cartthrob->cart->customer_info();
+
+
+        if (!array_key_exists($order_id, $this->pushed_orders)) {
+
+            // register this order is already in process..
+            $this->pushed_orders[$order_id] = true;
+
+            // see if we have a session id and a campaign id, also only do this when this user is not the admin.
+            $campaign_id = $this->getCampaignTrackingID();
+
+            // queue up the single order to be processed.
+            // $handler = new MailChimp_WooCommerce_Single_Order($order_id, null, $campaign_id);
+            // wp_queue($handler);
+
+            $store_id = mailchimp_get_store_id();
+
+            // only if we have the right parameters to do the work
+            if (!empty($store_id)) {
+
+                $call = $this->api_loader->getStoreOrder($store_id, $order_id) ? 'updateStoreOrder' : 'addStoreOrder';
+
+                // if we already pushed this order into the system, we need to unset it now just in case there
+                // was another campaign that had been sent and this was only an order update.
+                if ($call === 'updateStoreOrder') {
+                    $campaign_id = null;
+                }
+
+                // will either add or update the order
+                try {
+
+                    // transform the order
+                    $order = $this->transformOrder($order_id, $campaign_id);
+
+                    // will be the same as the customer id. an md5'd hash of a lowercased email.
+                    $cart_session_id = $order->getCustomer()->getId();
+
+                    $log = "$call :: #{$order->getId()} :: email: {$order->getCustomer()->getEmailAddress()}";
+
+                    if (!empty($campaign_id) && $call === 'addStoreOrder') {
+                        $log .= ' :: campaign id '.$campaign_id;
+                        $order->setCampaignId($campaign_id);
+                    }
+
+                    mailchimp_log('order_submit.submitting', $log);
+
+                    // update or create
+                    $api_response = $this->api_loader->$call($store_id, $order, false);
+
+                    if (empty($api_response)) {
+                        return $api_response;
+                    }
+
+                    mailchimp_log('order_submit.success', $log);
+
+                    // if we're adding a new order and the session id is here, we need to delete the AC cart record.
+                    if (!empty($cart_session_id)) {
+                        $this->api_loader->deleteCartByID($store_id, $cart_session_id);
+                    }
+
+                    return $api_response;
+
+                } catch (\Exception $e) {
+
+                    mailchimp_log('order_submit.tracing_error', $message = strtolower($e->getMessage()));
+
+                    if (!isset($order)) {
+                        // transform the order
+                        $order = $this->transformOrder($order_id, $campaign_id);
+                        $cart_session_id = $order->getCustomer()->getId();
+                    }
+
+                    // this can happen when a customer changes their email.
+                    if (isset($order) && strpos($message, 'not be changed')) {
+
+                        try {
+
+                            mailchimp_log('order_submit.deleting_customer', "#{$order->getId()} :: email: {$order->getCustomer()->getEmailAddress()}");
+
+                            // delete the customer before adding it again.
+                            $this->api_loader->deleteCustomer($store_id, $order->getCustomer()->getId());
+
+                            // update or create
+                            $api_response = $this->api_loader->$call($store_id, $order, false);
+
+                            $log = "Deleted Customer :: $call :: #{$order->getId()} :: email: {$order->getCustomer()->getEmailAddress()}";
+
+                            if (!empty($campaign_id)) {
+                                $log .= ' :: campaign id '.$campaign_id;
+                            }
+
+                            mailchimp_log('order_submit.success', $log);
+
+                            // if we're adding a new order and the session id is here, we need to delete the AC cart record.
+                            if (!empty($cart_session_id)) {
+                                $this->api_loader->deleteCartByID($store_id, $cart_session_id);
+                            }
+
+                            return $api_response;
+
+                        } catch (\Exception $e) {
+                            mailchimp_log('order_submit.error', 'deleting-customer-re-add :: #'.$order_id.' :: '.$e->getMessage());
+                        }
+                    }
+                }
+            }
+
             return false;
         }
 
         return true;
     }
 
+    /**
+     * @param string $hash
+     * @param $item
+     * @return MailChimp_WooCommerce_LineItem
+     */
+    private function transformLineItem($hash, $item)
+    {
+        $price = ee()->cartthrob->cart->item($hash)->price();
+
+        $line = new MailChimp_WooCommerce_LineItem();
+        $line->setId('LINE'.$hash);
+        $line->setProductId($item['product_id']);
+
+        // Not consider `variation_id`
+        if (isset($item['variation_id']) && $item['variation_id'] > 0) {
+            $line->setProductVariantId($item['variation_id']);
+        } else {
+            $line->setProductVariantId($item['product_id']);
+        }
+
+        $line->setQuantity($item['quantity']);
+        $line->setPrice($price);
+
+        return $line;
+    }
+
     private function handle_cart_updated() {
 
-        if (/*$this->is_admin ||*/ $this->cart_was_submitted) return false;
+        if ($this->is_admin || $this->cart_was_submitted) return false;
 
         if (empty($this->cart)) {
             $this->cart = $this->getCartItems();
@@ -319,212 +615,6 @@ class Mc_cart_ext
         }
 
         return false;
-    }
-
-
-    //
-    // Additional processing when add to cart action ends. (refer to `woocommerce_add_to_cart`)
-    // At this point the item data has been aggregated into an item object
-    //
-    public function mc_cartthrob_add_to_cart_end($item) {
-        $this->initialize();
-
-        if ($this->check_store_sync() == false) return false;
-
-        mc_log('cartthrob_add_to_cart_end');
-
-        return $this->handle_cart_updated();
-    }
-
-
-    /**
-     * @param string $hash
-     * @param $item
-     * @return MailChimp_WooCommerce_LineItem
-     */
-    private function transformLineItem($hash, $item)
-    {
-        $price = ee()->cartthrob->cart->item($hash)->price();
-
-        $line = new MailChimp_WooCommerce_LineItem();
-        $line->setId('LINE'.$hash);
-        $line->setProductId($item['product_id']);
-
-        // Not consider `variation_id`
-        if (isset($item['variation_id']) && $item['variation_id'] > 0) {
-            $line->setProductVariantId($item['variation_id']);
-        } else {
-            $line->setProductVariantId($item['product_id']);
-        }
-
-        $line->setQuantity($item['quantity']);
-        $line->setPrice($price);
-
-        return $line;
-    }
-
-    //
-    // Additional processing when update cart action ends. (refer to `woocommerce_cart_updated`)
-    //
-    public function mc_cartthrob_update_cart_end() {
-        $this->initialize();
-
-        if ($this->check_store_sync() == false) return false;
-
-        mc_log('cartthrob_update_cart_end');
-
-        return $this->handle_cart_updated();
-
-        /*$customer_info = ee()->cartthrob->cart->customer_info();
-        $ret = ee()->session->cache;*/
-
-        /*$item = ee()->cartthrob->cart->item(0);
-        mc_log($item->price());*/
-
-        /*if (!empty($customer_info['email_address']))
-            mc_log($customer_info);*/
-    }
-
-    //
-    // Additional processing when a delete from cart action is about to end. (refer to `woocommerce_cart_item_removed`)
-    //
-    public function mc_cartthrob_delete_from_cart_end() {
-        $this->initialize();
-
-        if ($this->check_store_sync() == false) return false;
-
-        mc_log('cartthrob_delete_from_cart_end');
-
-        return $this->handle_cart_updated();
-    }
-
-    //
-    // Additional processing when the payment has been authorized. (refer to `woocommerce_thankyou`)
-    //
-    public function mc_cartthrob_on_authorize() {
-        $this->initialize();
-
-        if ($this->check_store_sync() == false) return false;
-
-        mc_log('cartthrob_on_authorize');
-
-        $order_id = ee()->cartthrob->cart->order('order_id');
-
-        // for the debugging and logging
-        // $entry_id = ee()->cartthrob->cart->order('entry_id');
-        // $order_item = ee()->cartthrob->cart->order();
-        // $order_info = ee()->order_model->get_order($entry_id);
-        // $customer_info = ee()->cartthrob->cart->customer_info();
-
-
-        if (!array_key_exists($order_id, $this->pushed_orders)) {
-
-            // register this order is already in process..
-            $this->pushed_orders[$order_id] = true;
-
-            // see if we have a session id and a campaign id, also only do this when this user is not the admin.
-            $campaign_id = $this->getCampaignTrackingID();
-
-            // queue up the single order to be processed.
-            // $handler = new MailChimp_WooCommerce_Single_Order($order_id, null, $campaign_id);
-            // wp_queue($handler);
-
-            $store_id = mailchimp_get_store_id();
-
-            // only if we have the right parameters to do the work
-            if (!empty($store_id)) {
-
-                $call = $this->api_loader->getStoreOrder($store_id, $order_id) ? 'updateStoreOrder' : 'addStoreOrder';
-
-                // if we already pushed this order into the system, we need to unset it now just in case there
-                // was another campaign that had been sent and this was only an order update.
-                if ($call === 'updateStoreOrder') {
-                    $campaign_id = null;
-                }
-
-                // will either add or update the order
-                try {
-
-                    // transform the order
-                    $order = $this->transformOrder($order_id, $campaign_id);
-
-                    // will be the same as the customer id. an md5'd hash of a lowercased email.
-                    $cart_session_id = $order->getCustomer()->getId();
-
-                    $log = "$call :: #{$order->getId()} :: email: {$order->getCustomer()->getEmailAddress()}";
-
-                    if (!empty($campaign_id) && $call === 'addStoreOrder') {
-                        $log .= ' :: campaign id '.$campaign_id;
-                        $order->setCampaignId($campaign_id);
-                    }
-
-                    mailchimp_log('order_submit.submitting', $log);
-
-                    // update or create
-                    $api_response = $this->api_loader->$call($store_id, $order, false);
-
-                    if (empty($api_response)) {
-                        return $api_response;
-                    }
-
-                    mailchimp_log('order_submit.success', $log);
-
-                    // if we're adding a new order and the session id is here, we need to delete the AC cart record.
-                    if (!empty($cart_session_id)) {
-                        $this->api_loader->deleteCartByID($store_id, $cart_session_id);
-                    }
-
-                    return $api_response;
-
-                } catch (\Exception $e) {
-
-                    mailchimp_log('order_submit.tracing_error', $message = strtolower($e->getMessage()));
-
-                    if (!isset($order)) {
-                        // transform the order
-                        $order = $this->transformOrder($order_id, $campaign_id);
-                        $cart_session_id = $order->getCustomer()->getId();
-                    }
-
-                    // this can happen when a customer changes their email.
-                    if (isset($order) && strpos($message, 'not be changed')) {
-
-                        try {
-
-                            mailchimp_log('order_submit.deleting_customer', "#{$order->getId()} :: email: {$order->getCustomer()->getEmailAddress()}");
-
-                            // delete the customer before adding it again.
-                            $this->api_loader->deleteCustomer($store_id, $order->getCustomer()->getId());
-
-                            // update or create
-                            $api_response = $this->api_loader->$call($store_id, $order, false);
-
-                            $log = "Deleted Customer :: $call :: #{$order->getId()} :: email: {$order->getCustomer()->getEmailAddress()}";
-
-                            if (!empty($campaign_id)) {
-                                $log .= ' :: campaign id '.$campaign_id;
-                            }
-
-                            mailchimp_log('order_submit.success', $log);
-
-                            // if we're adding a new order and the session id is here, we need to delete the AC cart record.
-                            if (!empty($cart_session_id)) {
-                                $this->api_loader->deleteCartByID($store_id, $cart_session_id);
-                            }
-
-                            return $api_response;
-
-                        } catch (\Exception $e) {
-                            mailchimp_log('order_submit.error', 'deleting-customer-re-add :: #'.$order_id.' :: '.$e->getMessage());
-                        }
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        return true;
     }
 
     private function transformOrder($order_id, $campaign_id) 
@@ -698,59 +788,6 @@ class Mc_cart_ext
     }
 
     //
-    // Subscribe when member login (For the subscribe, it should be changed)
-    //
-    public function mc_member_login($userdata) {
-
-        $this->initialize();
-        // $user_session = ee()->cartthrob_session->to_array();
-        // $site_url = md5(ee()->config->item('site_url'));
-
-        if ($this->check_store_sync() == false) return false;
-
-        mc_log('member_login => '.$userdata->email);
-
-        $email = $userdata->email;
-        $api_key = $this->get_general_setting('mc_api_key');
-        $list_id = $this->get_general_setting('mc_list_id');
-        $store_sync = $this->get_general_setting('mc_store_sync');
-
-        $merge_vars = array(
-            'FNAME' => $userdata->screen_name,
-            'LNAME' => ''
-        );
-
-        try {
-            $ret = $this->api_loader->member($list_id, $email);
-
-            if ($merge_vars['FNAME'] != $ret['merge_fields']['FNAME'] ||
-                $merge_vars['LNAME'] != $ret['merge_fields']['LNAME'])
-            {
-                $this->api_loader->deleteMember($list_id, $email);
-                $this->api_loader->subscribe($list_id, $email, true, $merge_vars);
-
-                mailchimp_log('member.sync', 'Subscriber Swap '.$email, $merge_vars);
-
-                return false;
-            }
-        } catch (\Exception $e) {
-            if ($e->getCode() == 404) {
-                try {
-                    $this->api_loader->subscribe($list_id, $email, true, $merge_vars);
-                } catch (\Exception $e) {
-                    mailchimp_log('member.sync', $e->getMessage());
-                }
-
-                return false;
-            }
-
-            mailchimp_log('member.sync', $e->getMessage());
-        }
-
-        return false;
-    }
-
-    //
     // Get the image URI for the product tracking
     //
     private function parse_file_server_paths($string)
@@ -800,8 +837,6 @@ class Mc_cart_ext
 
         if ($this->check_store_sync() == false) return false;
 
-        mc_log('after_channel_entry_save => '.print_r($values, true));
-
         //
         // Get products channel id
         //
@@ -813,6 +848,8 @@ class Mc_cart_ext
         if ($products_channel_id == 0) {    // Check whether the product channel exists
             return false;
         }
+
+        mc_log('after_channel_entry_save => '.print_r($values, true));
 
         //
         // Get the field_id_x

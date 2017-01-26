@@ -7,10 +7,52 @@ require_once PATH_THIRD.'mc_cart/config.php';
 class Settings_model extends CI_Model
 {
     private $table = MC_CART_DB_SETTINGS;
+    private $subscriber_table = 'mc_subscribers';
 
     public function __construct()
     {
         parent::__construct();
+    }
+
+
+    public function get_subscribe($member_id) {
+        $this->db->select("subscribe");
+        $this->db->where('member_id', $member_id);
+        $result = $this->db->get($this->subscriber_table)->result_array();
+
+        if (count($result) > 0 && $result[0]['subscribe'] == 'y') {
+            return true;
+        }
+
+        return false;
+    }
+
+    public function subscribe($member_id, $value) {
+        $this->db->select("*");
+        $this->db->where('member_id', $member_id);
+        $result = $this->db->get($this->subscriber_table)->result_array();
+
+        if ($value != 'y') $value = 'n';
+
+        if (count($result) > 0) {
+            $this->db->update(
+                $this->subscriber_table,
+                array(
+                    'subscribe' => $value,
+                    'created_at' => gmdate('Y-m-d H:i:s', time()),
+                ),
+                array('member_id' => $member_id)
+            );
+        } else {
+            $this->db->insert(
+                $this->subscriber_table,
+                array(
+                    'subscribe' => $value,
+                    'member_id' => $member_id,
+                    'created_at' => gmdate('Y-m-d H:i:s', time()),
+                )
+            );
+        }
     }
 
     public function get_all_settings() {

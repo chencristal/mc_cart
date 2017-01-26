@@ -54,4 +54,8 @@ $lang = array(
     'mc_api_key_not_valid'  => 'Mailchimp API Key is not valid. Please check it again.',
     'mc_store_synced' => 'Store synced successfully.',
     'mc_store_not_synced' => 'Store has not synced.',
+
+    // Subscriber Checkbox
+    'mc_subscriber_label' => 'Subscriber Option',
+    'mc_subscriber_section' => 'Subscription',
 );
