@@ -104,6 +104,9 @@ class Mc_cart_upd {
             'member_member_login_multi' => 'mc_member_login',
             'member_member_login_single' => 'mc_member_login',
             'cp_member_login' => 'mc_member_login',
+
+            // core actions
+            'core_template_route' => 'mc_core_template_route',
         ));
 
         return TRUE;

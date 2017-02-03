@@ -38,8 +38,6 @@ class Mc_cart_mcp
 
     function __construct()
     {
-        // file_put_contents('2.txt', 'mc_cart_mcp_construct ', FILE_APPEND|LOCK_EX);
-
         // Setup the base url to the module
         $this->form_base = 'C=addons_modules'.AMP.'M=show_module_cp'.AMP.'module=mc_cart';
         $this->base = BASE.AMP.$this->form_base;

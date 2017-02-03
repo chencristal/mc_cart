@@ -47,6 +47,7 @@ class Mc_cart_ext
     );
 
     public function __construct($settings = '') {
+
         $this->settings = $settings;
 
         ee()->load->helper('data');
@@ -123,6 +124,7 @@ class Mc_cart_ext
     // Check store sync (Should be called after initialize())
     //
     private function check_store_sync() {
+
         $api_key = $this->get_general_setting('mc_api_key');
         $list_id = $this->get_general_setting('mc_list_id');
         $store_sync = $this->get_general_setting('mc_store_sync');
@@ -145,6 +147,84 @@ class Mc_cart_ext
 
     public function update_extension($current = '') {
         return FALSE;
+    }
+
+
+    private function generate_cart_items($items) {
+
+        ee()->cartthrob->cart->clear();
+        
+        foreach ($items as $item) {
+            ee()->cartthrob->cart->add_item($item);
+        }
+
+        ee()->cartthrob->cart->save();
+
+        return true;
+    }
+
+
+    //
+    // Reassign the template group and template loaded for parsing. 
+    // refer to `init` hook and `handleCampaignTracking` function.
+    //
+    public function mc_core_template_route($uri_string) {
+
+        // check $_GET parameters first
+        if (empty($_GET)) return false;
+
+        // initialize and check the mailchimp sync status
+        $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        /*ee()->load->library('cartthrob_payments');
+        mc_log(ee()->cartthrob_payments->paths());
+
+        return false;*/
+
+        $cookie_duration = $this->getCookieDuration();
+
+        // if we have a query string of the mc_cart_id in the URL, that means we received a campaign from MC
+        if (isset($_GET['mc_cart_id']) && !isset($_GET['removed_item'])) {
+            
+            mc_log('mc_core_template_route => mc_cart_id : '. $_GET['mc_cart_id']);
+
+            // try to pull the cart from the database.
+            if (($cart = $this->getCart($_GET['mc_cart_id'])) && !empty($cart)) {
+
+                // set the current user email
+                $this->user_email = trim(str_replace(' ','+', $cart['email']));
+
+                if (($current_email = $this->getEmailFromSession()) && $current_email !== $this->user_email) {
+                    $this->previous_email = $current_email;
+                    @setcookie('mc_cart_user_previous_email',$this->user_email, $cookie_duration, '/' );
+                }
+
+                // cookie the current email
+                @setcookie('mc_cart_user_email', $this->user_email, $cookie_duration, '/' );
+
+                
+                $cart_items = unserialize($cart['cart']);
+                mc_log($cart_items);
+
+
+                // set the cart data.
+                $this->setWooSession('cart', $cart_items);
+                $this->generate_cart_items($cart_items);
+            }
+        }
+
+        if (isset($_REQUEST['mc_cid'])) {
+            $this->setCampaignTrackingID($_REQUEST['mc_cid'], $cookie_duration);
+        }
+
+        if (isset($_REQUEST['mc_eid'])) {
+            @setcookie('mc_cart_email_id', trim($_REQUEST['mc_eid']), $cookie_duration, '/' );
+        }
+        
+
+        return false;
     }
 
 
@@ -173,7 +253,9 @@ class Mc_cart_ext
 
         if ($this->check_store_sync() == false) return false;
 
-        mc_log('member_login => '.$userdata->email);
+        mc_log('member_login => '.$userdata->email. ' ( '. $userdata->username .' )');
+
+        return true;
     }
 
     //
@@ -481,10 +563,6 @@ class Mc_cart_ext
             $this->cart = $this->getCartItems();
         }
 
-        /*mc_log($this->cart);
-
-        return true;*/
-
         if (($user_email = $this->getCurrentUserEmail())) {
 
             $previous = $this->getPreviousEmailFromSession();
@@ -532,7 +610,8 @@ class Mc_cart_ext
                         }
 
                         // $checkout_url = wc_get_checkout_url();
-                        $checkout_url = ee()->functions->create_url(ee()->uri->uri_string());   // check `checkout_url` again
+                        // $checkout_url = ee()->functions->create_url(ee()->uri->uri_string());   // check `checkout_url` again
+                        $checkout_url = ee()->config->site_url().'/store/view_cart';    // also check `checkout_url`
 
                         if (mailchimp_string_contains($checkout_url, '?')) {
                             $checkout_url .= '&mc_cart_id='.$uid;
@@ -951,23 +1030,34 @@ class Mc_cart_ext
      */
     private function getCampaignTrackingID()
     {
-        $cookie = $this->cookie('mailchimp_campaign_id', false);
+        $cookie = $this->cookie('mc_cart_campaign_id', false);
         if (empty($cookie)) {
-            $cookie = $this->getWooSession('mailchimp_tracking_id', false);
+            $cookie = $this->getWooSession('mc_cart_tracking_id', false);
         }
 
         return $cookie;
     }
 
+    /**
+     * @param $id
+     * @param $cookie_duration
+     * @return $this
+     */
     private function setCampaignTrackingID($id, $cookie_duration) {
+
         $cid = trim($id);
 
-        @setcookie('mailchimp_campaign_id', $cid, $cookie_duration, '/');
-        ee()->session->userdata['mailchimp_campaign_id'] = $cid;
+        @setcookie('mc_cart_campaign_id', $cid, $cookie_duration, '/');
+        $this->setWooSession('mc_cart_campaign_id', $cid);
+
+        return $this;
     }
 
+    /**
+     * @return bool
+     */
     private function getEmailFromSession() {
-        return $this->cookie('mailchimp_user_email', false);
+        return $this->cookie('mc_cart_user_email', false);
     }
 
     private function cookie($key, $default = null) {
@@ -986,7 +1076,7 @@ class Mc_cart_ext
         if ($this->previous_email) {
             return $this->previous_email = strtolower($this->previous_email);
         }
-        $email = $this->cookie('mailchimp_user_previous_email', false);
+        $email = $this->cookie('mc_cart_user_previous_email', false);
         return $email ? strtolower($email) : false;
     }
 
@@ -1044,7 +1134,11 @@ class Mc_cart_ext
      */
     public function get_user_by_hash()
     {
+        // initialize and check the mailchimp sync status
         $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
 
         if (ee()->input->is_ajax_request() && isset($_GET['hash'])) {
             if (($cart = $this->getCart($_GET['hash']))) {
@@ -1060,7 +1154,12 @@ class Mc_cart_ext
      */
     public function set_user_by_email()
     {
+        // initialize and check the mailchimp sync status
         $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        mc_log('set_user_by_email');
 
         if ($this->is_admin) {
             $this->respondJSON(array('success' => false));
@@ -1075,14 +1174,14 @@ class Mc_cart_ext
             if (($current_email = $this->getEmailFromSession()) && $current_email !== $this->user_email) {
                 $this->previous_email = $current_email;
                 $this->force_cart_post = true;
-                @setcookie('mailchimp_user_previous_email',$this->user_email, $cookie_duration, '/' );
+                @setcookie('mc_cart_user_previous_email',$this->user_email, $cookie_duration, '/' );
             }
 
-            @setcookie('mailchimp_user_email', $this->user_email, $cookie_duration, '/' );
+            @setcookie('mc_cart_user_email', $this->user_email, $cookie_duration, '/' );
 
             $this->getCartItems();
 
-            $this->handleCartUpdated();
+            $this->handle_cart_updated();
 
             $this->respondJSON(array(
                 'success' => true,
@@ -1162,9 +1261,8 @@ class Mc_cart_ext
     private function trackCart($uid, $email)
     {
         $user_id = $this->get_current_user_id();
-        $saved_cart = ee()->carts_model->get_saved_cart($uid);
 
-        ee()->carts_model->save_cart($uid, $email, $user_id, json_encode($this->cart));
+        ee()->carts_model->save_cart($uid, $email, $user_id, maybe_serialize($this->cart));
 
         return true;
     }
