@@ -611,7 +611,8 @@ class Mc_cart_ext
 
                         // $checkout_url = wc_get_checkout_url();
                         // $checkout_url = ee()->functions->create_url(ee()->uri->uri_string());   // check `checkout_url` again
-                        $checkout_url = ee()->config->site_url().'/store/view_cart';    // also check `checkout_url`
+                        $site_url = ee()->config->site_url();
+                        $checkout_url = rtrim($site_url, '/').'/store/view_cart';    // also check `checkout_url`
 
                         if (mailchimp_string_contains($checkout_url, '?')) {
                             $checkout_url .= '&mc_cart_id='.$uid;
