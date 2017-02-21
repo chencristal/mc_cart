@@ -163,6 +163,77 @@ class Mc_cart_ext
         return true;
     }
 
+    //
+    // Get `Products` field group id
+    //
+    private function get_products_field_group_id() {
+        $ret = array();
+
+        $field_groups = ee('Model')->get('ChannelFieldGroup')
+            ->filter('group_name', 'Products')
+            ->filter('site_id', ee()->config->item('site_id'))
+            ->all();
+        foreach ($field_groups as $group) {
+            $ret[] = $group->group_id;
+        }
+
+        if (count($ret) == 0) return false;
+
+        return $ret;
+    }    
+
+    //
+    // Get products channel fields parameters
+    //
+    private function get_products_channel_fields($channel_id) {
+        $query = ee()->channel_model->get_channels(NULL, array(), array(array('channel_id' => $channel_id)));
+        $result = $query->result();
+
+        if (count($result) == 0) return false;
+
+        $ret = array();
+
+        $query = ee()->field_model->get_fields($result[0]->field_group);
+        foreach ($query->result() as $field) {
+            switch ($field->field_name) {
+                case 'product_description':
+                case 'product_thumbnail':
+                case 'product_detail_image':
+                case 'product_price':
+                case 'product_inventory':
+                case 'product_sku':
+                    $ret[$field->field_name] = 'field_id_'.$field->field_id;
+                    break;
+            }
+        }
+
+        return $ret;
+    }
+
+    //
+    // Get all of the `Products` channels (returns `channel_id`)
+    //
+    private function get_products_channels() {
+
+        //$product_channels = ee()->cartthrob->store->config('product_channels');
+
+        $groups = $this->get_products_field_group_id();
+
+        if ($groups == false) return false;
+
+        $ret = array();
+
+        $query = ee()->channel_model->get_channels(NULL, array(), array(array('field_group' => $groups)));
+        $result = $query->result();
+        foreach($result as $key => $row) {
+            $ret[] = $row->channel_id;
+        }
+
+        if (count($ret) == 0) return false;
+
+        return $ret;
+    }
+
 
     //
     // Reassign the template group and template loaded for parsing. 
@@ -225,6 +296,206 @@ class Mc_cart_ext
         
 
         return false;
+    }
+
+
+    //
+    // Return entry object by entry_id
+    //
+    private function get_entry_by_id($entry_id) {
+
+        $entry = ee('Model')->get('ChannelEntry')
+            ->with('Channel')
+            ->filter('entry_id', $entry_id)
+            ->filter('ChannelEntry.site_id', ee()->config->item('site_id'))
+            ->first();
+
+        if (!isset($entry)) {
+            return false;
+        }
+
+        return $entry;
+    }
+
+    //
+    // Add entry as a product to mailchimp (called by `handle_cart_updated` function)
+    // 
+    private function add_product_by_entry_id($entry_id) {
+
+        $entry = $this->get_entry_by_id($entry_id);
+        if ($entry == false)    // Check whether the entry exists
+            return false;
+
+        $values = $entry->toArray();
+
+        //
+        // Get products channel id
+        //
+        $products_channel_id_array = $this->get_products_channels();
+        if ($products_channel_id_array == false)    // Check whether the product channel exists
+            return false;
+
+        mc_log('add_product_by_entry_id (new product register to mailchimp) => ' . $entry_id);
+
+        if (in_array($values['channel_id'], $products_channel_id_array)) {    // It is the entry that being updated in the product channel
+
+            //
+            // Get the field_id_x
+            //
+            $fields = $this->get_products_channel_fields($values['channel_id']);
+
+            $product_description_id = isset($fields['product_description']) ? $fields['product_description'] : '';
+            $product_thumbnail_id = isset($fields['product_thumbnail']) ? $fields['product_thumbnail'] : '';
+            $product_detail_image_id = isset($fields['product_detail_image']) ? $fields['product_detail_image'] : '';
+            $product_price_id = isset($fields['product_price']) ? $fields['product_price'] : '';
+            $product_inventory_id = isset($fields['product_inventory']) ? $fields['product_inventory'] : '';
+            $product_sku_id = isset($fields['product_sku']) ? $fields['product_sku'] : '';
+
+            $store_id = mailchimp_get_store_id();
+            $product_id = $values['entry_id'];
+
+            if ($this->api_loader->getStoreProduct($store_id, $product_id)) {
+                $this->api_loader->deleteStoreProduct($store_id, $product_id);
+            }
+
+            try {
+                $product = new MailChimp_WooCommerce_Product();
+
+                $product->setId($product_id);
+                $product->setTitle($values['title']);
+                $product->setHandle($values['title']);
+                $product->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
+                $product->setDescription($values[$product_description_id]);
+                $product->setPublishedAtForeign(mailchimp_date_utc($values['entry_date']));
+                $product->setUrl($values['url_title']);
+
+                // Create a new Variant for the product
+                $variant = new MailChimp_WooCommerce_ProductVariation();
+                $variant->setId($product_id);
+                $variant->setTitle($values['title']);
+                $variant->setUrl($values['url_title']);
+                $variant->setPrice($values[$product_price_id]);
+                $variant->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
+                if (!empty($values[$product_inventory_id])) 
+                    $variant->setInventoryQuantity($values[$product_inventory_id]);
+                if (!empty($values[$product_sku_id])) 
+                    $variant->setSku($values[$product_sku_id]);
+                if ($values['status'] == 'open') $variant->setVisibility('visible');
+
+                $product->addVariant($variant);
+
+                mailchimp_log('product_submit.submitting', "addStoreProduct :: #{$product->getId()}");
+
+                $this->api_loader->addStoreProduct($store_id, $product);
+
+                mailchimp_log('product_submit.success', "addStoreProduct :: #{$product->getId()}");
+
+                // update_option('mailchimp-woocommerce-last_product_updated', $product->getId());
+
+            } catch (MailChimp_WooCommerce_Error $e) {
+                mailchimp_log('product_submit.error', "addStoreProduct :: MailChimp_WooCommerce_Error :: {$e->getMessage()}");
+            } catch (MailChimp_WooCommerce_ServerError $e) {
+                mailchimp_log('product_submit.error', "addStoreProduct :: MailChimp_WooCommerce_ServerError :: {$e->getMessage()}");
+            } catch (Exception $e) {
+                mailchimp_log('product_submit.error', "addStoreProduct :: Uncaught Exception :: {$e->getMessage()}");
+            }
+        }
+
+        return true;
+    }
+
+
+    //
+    // Called before the channel entry object is inserted or updated. (refer to `save_post`)
+    // Changes made to the object will be saved automatically.
+    //
+    public function mc_after_channel_entry_save($entry, $values) {
+
+        $this->initialize();
+
+        if ($this->check_store_sync() == false) return false;
+
+        // mc_log(get_class_methods(get_class($entry->getStructure()->getFields())));
+        // mc_log($entry->getStructure()->getFields());
+        // mc_log($entry->getStructure()->toArray());    line: 11599
+
+
+        //
+        // Get products channel id
+        //
+        $products_channel_id_array = $this->get_products_channels();
+        if ($products_channel_id_array == false)    // Check whether the product channel exists
+            return false;
+
+        mc_log('after_channel_entry_save (product new or update) => ' . $values['entry_id']);
+
+        if (in_array($values['channel_id'], $products_channel_id_array)) {    // It is the entry that being updated in the product channel
+
+            //
+            // Get the field_id_x
+            //
+            $fields = $this->get_products_channel_fields($values['channel_id']);
+
+            $product_description_id = isset($fields['product_description']) ? $fields['product_description'] : '';
+            $product_thumbnail_id = isset($fields['product_thumbnail']) ? $fields['product_thumbnail'] : '';
+            $product_detail_image_id = isset($fields['product_detail_image']) ? $fields['product_detail_image'] : '';
+            $product_price_id = isset($fields['product_price']) ? $fields['product_price'] : '';
+            $product_inventory_id = isset($fields['product_inventory']) ? $fields['product_inventory'] : '';
+            $product_sku_id = isset($fields['product_sku']) ? $fields['product_sku'] : '';
+
+            $store_id = mailchimp_get_store_id();
+            $product_id = $values['entry_id'];
+
+            mc_log('mc_after_channel_entry_save => product_id : '. $product_id);    // chen_debug
+
+            if ($this->api_loader->getStoreProduct($store_id, $product_id)) {
+                $this->api_loader->deleteStoreProduct($store_id, $product_id);
+            }
+
+            if (isset($values['submit'])) {     // Only for `save` or `update` product
+                try {
+                    $product = new MailChimp_WooCommerce_Product();
+
+                    $product->setId($product_id);
+                    $product->setTitle($values['title']);
+                    $product->setHandle($values['title']);
+                    $product->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
+                    $product->setDescription($values[$product_description_id]);
+                    $product->setPublishedAtForeign(mailchimp_date_utc($values['entry_date']));
+                    $product->setUrl($values['url_title']);
+
+                    // Create a new Variant for the product
+                    $variant = new MailChimp_WooCommerce_ProductVariation();
+                    $variant->setId($product_id);
+                    $variant->setTitle($values['title']);
+                    $variant->setUrl($values['url_title']);
+                    $variant->setPrice($values[$product_price_id]);
+                    $variant->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
+                    if (!empty($values[$product_inventory_id])) $variant->setInventoryQuantity($values[$product_inventory_id]);
+                    if (!empty($values[$product_sku_id])) $variant->setSku($values[$product_sku_id]);
+                    if ($values['status'] == 'open') $variant->setVisibility('visible');
+
+                    $product->addVariant($variant);
+
+                    mailchimp_log('product_submit.submitting', "addStoreProduct :: #{$product->getId()}");
+
+                    $this->api_loader->addStoreProduct($store_id, $product);
+
+                    mailchimp_log('product_submit.success', "addStoreProduct :: #{$product->getId()}");
+
+                    // update_option('mailchimp-woocommerce-last_product_updated', $product->getId());
+
+                } catch (MailChimp_WooCommerce_Error $e) {
+                    mailchimp_log('product_submit.error', "addStoreProduct :: MailChimp_WooCommerce_Error :: {$e->getMessage()}");
+                } catch (MailChimp_WooCommerce_ServerError $e) {
+                    mailchimp_log('product_submit.error', "addStoreProduct :: MailChimp_WooCommerce_ServerError :: {$e->getMessage()}");
+                } catch (Exception $e) {
+                    mailchimp_log('product_submit.error', "addStoreProduct :: Uncaught Exception :: {$e->getMessage()}");
+                }
+            }
+        }
+
+        return true;
     }
 
 
@@ -668,13 +939,15 @@ class Mc_cart_ext
                             // if we have an error it's most likely due to a product not being found.
                             // let's loop through each item, verify that we have the product or not.
                             // if not, we will add it.
-                            /*foreach ($products as $item) {
+                            foreach ($products as $item) {
                                 // @var MailChimp_WooCommerce_LineItem $item
-                                $transformer = new MailChimp_WooCommerce_Single_Product($item->getProductID());
-                                if (!$transformer->api()->getStoreProduct($store_id, $item->getProductId())) {
-                                    $transformer->handle();
-                                }
-                            }*/
+                                $this->add_product_by_entry_id($item->getProductId());
+
+                                // $transformer = new MailChimp_WooCommerce_Single_Product($item->getProductId());
+                                // if (!$transformer->api()->getStoreProduct($store_id, $item->getProductId())) {
+                                //     $transformer->handle();
+                                // }
+                            }
 
                             mailchimp_log('abandoned_cart.submitting', "email: {$customer->getEmailAddress()}");
 
@@ -906,124 +1179,6 @@ class Mc_cart_ext
 
         return $string;
     }
-
-    //
-    // Called before the channel entry object is inserted or updated. (refer to `save_post`)
-    // Changes made to the object will be saved automatically.
-    //
-    public function mc_after_channel_entry_save($entry, $values) {
-
-        $this->initialize();
-
-        if ($this->check_store_sync() == false) return false;
-
-        //
-        // Get products channel id
-        //
-        $products_channel_id = 0;
-        $query = ee()->channel_model->get_channels(NULL, array(), array(array('channel_name' => array('products'))));
-        if (count($ret = $query->result()) > 0)
-            $products_channel_id = $ret[0]->channel_id;
-
-        if ($products_channel_id == 0) {    // Check whether the product channel exists
-            return false;
-        }
-
-        mc_log('after_channel_entry_save => '.print_r($values, true));
-
-        //
-        // Get the field_id_x
-        //
-        $product_description_id = '';
-        $product_thumbnail_id = '';
-        $product_detail_image_id = '';
-        $product_inventory_id = '';
-        $product_sku_id = '';
-        $product_price_id = '';
-
-        foreach($ret as $channel) {
-            $query = ee()->field_model->get_fields($channel->field_group);
-            foreach ($query->result() as $field) {
-                switch ($field->field_name) {
-                    case 'product_description':
-                        $product_description_id = 'field_id_'.$field->field_id;
-                        break;
-                    case 'product_thumbnail':
-                        $product_thumbnail_id = 'field_id_'.$field->field_id;
-                        break;
-                    case 'product_detail_image':
-                        $product_detail_image_id = 'field_id_'.$field->field_id;
-                        break;
-                    case 'product_price':
-                        $product_price_id = 'field_id_'.$field->field_id;
-                        break;
-                    case 'product_inventory':
-                        $product_inventory_id = 'field_id_'.$field->field_id;
-                        break;
-                    case 'product_sku':
-                        $product_sku_id = 'field_id_'.$field->field_id;
-                        break;
-                }
-            }
-        }
-
-        if ($values['channel_id'] == $products_channel_id) {    // It is the entry that being updated in the product channel
-
-            $store_id = mailchimp_get_store_id();
-            $product_id = $values['entry_id'];
-
-            mc_log('mc_after_channel_entry_save => product_id : '. $product_id);    // chen_debug
-
-            if ($this->api_loader->getStoreProduct($store_id, $product_id)) {
-                $this->api_loader->deleteStoreProduct($store_id, $product_id);
-            }
-
-            if (isset($values['submit'])) {     // Only for `save` or `update` product
-                try {
-                    $product = new MailChimp_WooCommerce_Product();
-
-                    $product->setId($product_id);
-                    $product->setTitle($values['title']);
-                    $product->setHandle($values['title']);
-                    $product->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
-                    $product->setDescription($values[$product_description_id]);
-                    $product->setPublishedAtForeign(mailchimp_date_utc($values['entry_date']));
-                    $product->setUrl($values['url_title']);
-
-                    // Create a new Variant for the product
-                    $variant = new MailChimp_WooCommerce_ProductVariation();
-                    $variant->setId($product_id);
-                    $variant->setTitle($values['title']);
-                    $variant->setUrl($values['url_title']);
-                    $variant->setPrice($values[$product_price_id]);
-                    $variant->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
-                    if (!empty($values[$product_inventory_id])) $variant->setInventoryQuantity($values[$product_inventory_id]);
-                    if (!empty($values[$product_sku_id])) $variant->setSku($values[$product_sku_id]);
-                    if ($values['status'] == 'open') $variant->setVisibility('visible');
-
-                    $product->addVariant($variant);
-
-                    mailchimp_log('product_submit.submitting', "addStoreProduct :: #{$product->getId()}");
-
-                    $this->api_loader->addStoreProduct($store_id, $product);
-
-                    mailchimp_log('product_submit.success', "addStoreProduct :: #{$product->getId()}");
-
-                    // update_option('mailchimp-woocommerce-last_product_updated', $product->getId());
-
-                } catch (MailChimp_WooCommerce_Error $e) {
-                    mailchimp_log('product_submit.error', "addStoreProduct :: MailChimp_WooCommerce_Error :: {$e->getMessage()}");
-                } catch (MailChimp_WooCommerce_ServerError $e) {
-                    mailchimp_log('product_submit.error', "addStoreProduct :: MailChimp_WooCommerce_ServerError :: {$e->getMessage()}");
-                } catch (Exception $e) {
-                    mailchimp_log('product_submit.error', "addStoreProduct :: Uncaught Exception :: {$e->getMessage()}");
-                }
-            }
-        }
-
-        return true;
-    }
-
 
 
     /**

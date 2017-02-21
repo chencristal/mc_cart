@@ -15,7 +15,7 @@ class MailChimp_Api_Locales
     /**
      * @return array
      */
-    public function all()
+    public static function all()
     {
         return array(
             "af_NA"=> "Afrikaans (Namibia)",
@@ -461,7 +461,7 @@ class MailChimp_Api_Locales
     public static function simple()
     {
         $response = array();
-        foreach (static::all() as $key => $value) {
+        foreach (MailChimp_Api_Locales::all() as $key => $value) {
             if (!strpos($key, '_') > 0) {
                 $response[$key] = $value;
             }
