@@ -1,8 +1,9 @@
 <?php
 
-require_once PATH_THIRD.'mc_cart/config.php';
-
 $lang = array(
+    'mc_cart_module_name' => 'Cartthrob Mailchimp',
+    'nav_mc_cart' => 'Cartthrob Mailchimp',
+    'product_channels_header' => 'Cartthrob Product Channels',
 
     // Navigation
     'dashboard' => 'Dashboard',
@@ -17,6 +18,7 @@ $lang = array(
     // Generic
     'mc_api_key' => 'API Key',
     'mc_api_key_desc' => 'Enter your MailChimp API key.',
+    'mc_list_id_panel' => 'List ID Panel',
     'mc_list_id' => 'List ID',
     'mc_list_id_desc' => 'Enter your MailChimp List ID.',
     'mc_debugging' => 'Debugging',
@@ -58,4 +60,30 @@ $lang = array(
     // Subscriber Checkbox
     'mc_subscriber_label' => 'Subscriber Option',
     'mc_subscriber_section' => 'Subscription',
+
+
+    // CP PRODUCT CHANNEL SETTINGS
+    'nav_mc_product_settings' => 'Product Channel Settings',
+    'nav_mc_product_channels' => 'Product Channels',
+    'mc_product_channels_header' => 'Product Channels For Mailchimp',
+    'mc_product_channel_form_description' => 'This section controls the way product data is stored, and the way orders are processed using that stored data',
+    'mc_product_channel' => 'Product Channel For Mailchimp',
+    'mc_product_channel_description' => 'Product Channel Name',
+    'mc_product_channel_price_field' => 'Price Field Name',
+    'mc_product_channel_price_field_description' => 'Prices can be stored as part of your product data. If you set prices per product, choose the field here.',
+    'mc_product_channel_desc_field' => 'Description Field Name',
+    'mc_product_channel_desc_field_description' => 'Descriptions can be stored as part of your product data. If you set description per product, choose the field here.',
+    'mc_product_channel_image_url_field' => 'Image URL Field Name',
+    'mc_product_channel_image_url_field_description' => 'Image URLs can be stored as part of your product data. If you set Image URLs per product, choose the field here.',
+    'mc_product_channel_shipping_field' => 'Shipping Cost Field Name',
+    'mc_product_channel_shipping_field_description' => 'Shipping Cost Field Name',
+    'mc_product_channel_weight_field' => 'Product Weight Field Name',
+    'mc_product_channel_weight_field_description' => 'If you use weight to figure shipping for each product, choose the product weight field here.',
+    'mc_product_channel_inventory_field' => 'Product Inventory Field Name',
+    'mc_product_channel_inventory_field_description' => 'Product Inventory Field Name',
+
+    // CP STORE SETTINGS
+    'nav_mc_store_settings' => 'Mailchimp Store Settings',
+    'mc_store_settings_panel' => 'Store Settings',
+
 );

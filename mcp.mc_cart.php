@@ -32,9 +32,20 @@ class Mc_cart_mcp
         'mc_locale' => 'en',
         'mc_currency' => 'USD',
         'mc_store_sync' => 'n',
+        'mc_product_fields' => '',
+    );
+
+    private $nav = array(
+        'mc_store_settings' => array(
+            'mc_list_id_settings' => 'nav_mc_list_id_settings',
+        ),
+        'mc_product_settings' => array(
+            'mc_product_channels' => 'nav_mc_product_channels',
+        ),
     );
 
     public $general_settings = array();     // mc_cart_settings {key: value}
+    private $cartthrob_settings = array();
 
     function __construct()
     {
@@ -47,9 +58,10 @@ class Mc_cart_mcp
 
         ee()->load->helper(array(/*'provider', */'data'));
         ee()->load->library('mailchimp_api');
-        ee()->load->model('settings_model');
+        ee()->load->model(array('settings_model', 'channel_model', 'field_model'));
 
         ee()->load->add_package_path(PATH_THIRD.'cartthrob/');
+        ee()->load->model('cartthrob_settings_model');
         ee()->load->library('cartthrob_loader');
         ee()->load->library('get_settings');
         ee()->load->library('number');
@@ -65,6 +77,8 @@ class Mc_cart_mcp
             ee()->session->set_flashdata($this->module_name.'_system_error', sprintf('%s', lang($this->module_name.'_orders_channel_must_be_configured')));
             ee()->functions->redirect(ee('CP/URL')->make('addons/settings/cartthrob/order_settings'));
         }
+
+        $this->cartthrob_settings = ee()->cartthrob_settings_model->get_settings();
     }
 
     // ------------------------------------------------------------------------
@@ -82,7 +96,9 @@ class Mc_cart_mcp
         $this->currency_list = MailChimp_WooCommerce_CurrencyCodes::lists();
         $this->timezone_list = get_timezone_list();
 
-        // check store sync
+        //
+        // Check store sync
+        //
         if ($this->get_general_setting('mc_store_sync') == 'y') {
             $reset_sync = false;
             if (!isset($this->general_settings['mc_list_id']) ||
@@ -102,24 +118,58 @@ class Mc_cart_mcp
         //
         // Initialize the default settings with cartthrob
         //
-        $this->default_settings['mc_store_name'] = ee()->get_settings->get_setting("cartthrob","store_name");
-        $this->default_settings['mc_store_address'] = ee()->get_settings->get_setting("cartthrob","store_address1");
-        $this->default_settings['mc_store_city'] = ee()->get_settings->get_setting("cartthrob","store_city");
-        $this->default_settings['mc_store_state'] = ee()->get_settings->get_setting("cartthrob","store_state");
-        $this->default_settings['mc_store_postal_code'] = ee()->get_settings->get_setting("cartthrob","store_zip");
-        $this->default_settings['mc_store_country'] = ee()->get_settings->get_setting("cartthrob","store_country");
-        $this->default_settings['mc_store_phone'] = ee()->get_settings->get_setting("cartthrob","store_phone");
+        $this->default_settings['mc_store_name']        = ee()->get_settings->get_setting("cartthrob", "store_name");
+        $this->default_settings['mc_store_address']     = ee()->get_settings->get_setting("cartthrob", "store_address1");
+        $this->default_settings['mc_store_city']        = ee()->get_settings->get_setting("cartthrob", "store_city");
+        $this->default_settings['mc_store_state']       = ee()->get_settings->get_setting("cartthrob", "store_state");
+        $this->default_settings['mc_store_postal_code'] = ee()->get_settings->get_setting("cartthrob", "store_zip");
+        $this->default_settings['mc_store_country']     = ee()->get_settings->get_setting("cartthrob", "store_country");
+        $this->default_settings['mc_store_phone']       = ee()->get_settings->get_setting("cartthrob", "store_phone");
 
         //
         // Initialize the mailchimp api class
         //
-        $this->api_loader = ee()->mailchimp_api->create_loader(
-            $this->get_general_setting('mc_api_key'));
+        $this->api_loader = ee()->mailchimp_api->create_loader($this->get_general_setting('mc_api_key'));
 
         $this->initialized = TRUE;
 
         return;
     }
+
+
+    //
+    // Get product fields from MC
+    //
+    private function get_product_channel_fields() {
+
+        $ret = array();
+
+        if ($this->get_general_setting('mc_product_fields') == '') {
+            $mc_channel_fields = array();
+        }
+        else {
+            $mc_channel_fields = unserialize($this->get_general_setting('mc_product_fields'));
+        }
+
+        foreach ($this->cartthrob_settings['product_channel_fields'] as $id => $fields) {
+            if (isset($mc_channel_fields[$id])) {
+                $ret[$id] = $mc_channel_fields[$id];
+            }
+            else {
+                $ret[$id] = array(
+                    'price' => isset($fields['price']) ? $fields['price'] : null,
+                    'shipping' => isset($fields['shipping']) ? $fields['shipping'] : null,
+                    'weight' => isset($fields['weight']) ? $fields['weight'] : null,
+                    'inventory' => isset($fields['inventory']) ? $fields['inventory'] : null,
+                    'description' => null,
+                    'image_url' => null,
+                );
+            }
+        }
+
+        return $ret;
+    }
+
 
     public function index()
     {
@@ -196,8 +246,71 @@ class Mc_cart_mcp
         );
     }
 
-    public function store_settings() {
+    public function quick_save($set_success_message = TRUE) {
+
         $this->initialize();
+
+        $return = ee()->input->get('return');
+
+        if ($return == 'mc_product_settings') {
+            ee()->settings_model->save_setting('mc_product_fields',
+                serialize(ee()->input->post('product_channel_fields')));
+        }
+        else if ($return == 'mc_store_settings') {
+            // Validate the form
+            if (!empty($_POST)) {
+                $validator = ee('Validation')->make();
+
+                $rules = array(
+                    'mc_store_name' => 'required',
+                    'mc_store_email' => 'required',
+                    'mc_store_address' => 'required',
+                    'mc_store_city' => 'required',
+                    'mc_store_state' => 'required',
+                    'mc_store_postal_code' => 'required',
+                    'mc_store_country' => 'required',
+                    'mc_store_phone' => 'required',
+                );
+
+                $validator->setRules($rules);
+                $result = $validator->validate($_POST);
+
+                if ($result->isValid()) {
+                    $this->save_store_settings();
+                }
+                else {
+                    $vars['errors'] = $result;
+                    ee('CP/Alert')->makeInline('shared-form')
+                        ->asIssue()
+                        ->withTitle(lang('settings_not_saved'))
+                        ->now();
+                }
+            }
+        }
+
+        if ($set_success_message)
+        {
+            ee()->session->set_flashdata('message_success', sprintf('%s %s %s', lang('mc_cart_module_name'), lang('nav_'.$return), lang('settings_saved')));
+        }
+
+        ee()->functions->redirect(ee('CP/URL')->make('addons/settings/mc_cart/'.$return));
+    }
+
+
+    public function mc_store_settings() {
+        $this->initialize();
+
+        return $this->load_view(__FUNCTION__);
+    }
+
+    public function mc_product_settings() {
+        $this->initialize();
+
+        return $this->load_view(__FUNCTION__);
+    }
+
+
+    private function load_view($current_nav, $more = array(), $structure = array()) {
 
         //
         // If mailchimp API key is not valid, then redirect to base url
@@ -206,6 +319,125 @@ class Mc_cart_mcp
             ee()->functions->redirect($this->base);
         }
 
+        $view_paths = array();
+        $sections = array();
+
+        $nav = $this->nav;
+
+        foreach ($nav as $top_nav => $_nav) {
+            if ($top_nav != $current_nav)
+                continue;
+
+            foreach ($_nav as $url_title => $section) {
+                if ( ! preg_match('/^http/', $url_title)) $sections[] = $url_title;
+            }
+        }
+
+
+        //
+        // Get channels information
+        //
+        $channels = ee()->channel_model->get_channels(NULL, array(),
+            array(array('channel_id' => $this->cartthrob_settings['product_channels'])))->result_array();
+        $fields = array();
+        $channel_titles = array();
+        $statuses = array();
+
+        foreach ($channels as $channel) {
+            $channel_id = $channel['channel_id'];
+
+            $channel_titles[$channel_id] = $channel['channel_title'];
+
+            // only want to capture a subset of data, because we're using this for JSON and we were getting too much data previously
+            $channel_fields = ee()->field_model->get_fields($channel['field_group'])->result_array();
+
+            foreach ($channel_fields as $key => &$channel_field) {
+                /*
+				This is 5.2 only... sigh this will eventually replace the 3 lines below.
+				$fields[$channel['channel_id']][$key] = array_intersect_key($data, array_fill_keys(array('field_id',
+                        'site_id', 'group_id', 'field_name', 'field_type', 'field_label'), TRUE));
+				*/
+                $array_fill_keys = array('field_id', 'site_id', 'group_id', 'field_name', 'field_type', 'field_label');
+                $combined = array_combine($array_fill_keys, array_fill(0, count($array_fill_keys), TRUE));
+                $fields[$channel_id][$key] = array_intersect_key($channel_field, $combined);
+            }
+
+            $statuses[$channel_id] = ee()->channel_model->get_channel_statuses($channel['status_group'])->result_array();
+        }
+
+        $status_titles = array();
+        foreach ($statuses as $status) {
+            foreach ($status as $item) {
+                $status_titles[$item['status']] = $item['status'];
+            }
+        }
+        if ( ! empty($this->cartthrob_settings['product_channels'])) {
+            foreach ($this->cartthrob_settings['product_channels'] as $i => $channel_id) {
+                if ( ! isset($channel_titles[$channel_id])) {
+                    unset($this->cartthrob_settings['product_channels'][$i]);
+                }
+            }
+        }
+        if ( ! empty($this->cartthrob_settings['product_channel_fields'])) {
+            foreach ($this->cartthrob_settings['product_channel_fields'] as $channel_id => $values)
+            {
+                if ( ! isset($channel_titles[$channel_id])) {
+                    unset($this->cartthrob_settings['product_channel_fields'][$channel_id]);
+                }
+            }
+        }
+
+        $data = array(
+            'structure' => $structure,
+            'nav' => $nav,
+            'current_nav' => $current_nav,
+            'sections' => $sections,
+            'load' => ee()->load,
+            'session' => ee()->session,
+            'fields' => $fields,
+            'channel_fields' => $this->get_product_channel_fields(),
+            'channels' => $channels,
+            'channel_titles' => $channel_titles,
+            'statuses' => $statuses,
+            'status_titles' => $status_titles,
+            'cartthrob_settings' => $this->cartthrob_settings,
+            'settings' => $this->general_settings,
+            'locale_list' => $this->locale_list,
+            'currency_list' => $this->currency_list,
+            'timezone_list' => $this->timezone_list,
+            'mc_mcp' => $this,
+            'form_open' => form_open(ee('CP/URL')->make('addons/settings/mc_cart/quick_save', array('return' => ee()->uri->segment(5)))),
+        );
+
+        ee()->cp->cp_page_title =  ee()->lang->line('mc_cart_module_name').' - '.ee()->lang->line('nav_'.$current_nav);
+
+        ee()->cp->add_js_script('ui', 'accordion');
+
+        if (version_compare(APP_VER, '2.2', '<'))
+        {
+            ee()->cp->add_to_head('<link href="'.URL_THIRD_THEMES.'cartthrob/css/cartthrob.css" rel="stylesheet" type="text/css" />');
+            // ee()->cp->add_to_foot(ee()->load->view('mc_settings_form_head', $data, TRUE));
+
+            $output = ee()->load->view('settings_form', $data, TRUE);
+        }
+        else
+        {
+
+            ee()->cp->add_to_head('<link href="'.URL_THIRD_THEMES.'cartthrob/css/cartthrob.css" rel="stylesheet" type="text/css" />');
+            // ee()->cp->add_to_foot(ee()->load->view('mc_settings_form_head', $data, TRUE));
+
+            $output = ee()->load->view('mc_settings_form', $data, TRUE);
+
+            foreach ($view_paths as $path)
+            {
+                ee()->load->remove_package_path($path);
+            }
+        }
+
+        return $output;
+    }
+
+    public function get_mailchimp_list_status() {
         //
         // First of all, Get mailchimp list array, and Check the store synced
         //
@@ -232,206 +464,10 @@ class Mc_cart_mcp
             }
         }
 
-        $vars = array(
-            'base_url'              => ee('CP/URL', 'addons/settings/mc_cart/store_settings'),
-            'cp_page_title'         => lang('mc_cart_store_settings_form'),
-            'save_btn_text'         => 'btn_save_settings',
-            'save_btn_text_working' => 'btn_saving'
-        );
-
-        // Validate the form
-        if (!empty($_POST)) {
-            $validator = ee('Validation')->make();
-
-            $rules = array(
-                'mc_store_name' => 'required',
-                'mc_store_email' => 'required',
-                'mc_store_address' => 'required',
-                'mc_store_city' => 'required',
-                'mc_store_state' => 'required',
-                'mc_store_postal_code' => 'required',
-                'mc_store_country' => 'required',
-                'mc_store_phone' => 'required',
-            );
-
-            $validator->setRules($rules);
-            $result = $validator->validate($_POST);
-
-            if ($result->isValid()) {
-                $this->save_store_settings();
-            }
-            else {
-                $vars['errors'] = $result;
-                ee('CP/Alert')->makeInline('shared-form')
-                    ->asIssue()
-                    ->withTitle(lang('settings_not_saved'))
-                    ->now();
-            }
-        }
-
-
-        //
-        // For the 'resync' button
-        //
-        $resync_url = ee('CP/URL', 'addons/settings/mc_cart/resync')->compile();
-        $list_fields = array(
-            'mc_list_id' => array(
-                'type' => 'select',
-                'choices' => $list_id_array,
-                'value' => $list_id,
-                'disabled' => ($is_synced == 'y') ? TRUE: FALSE,
-            )
-        );
-        if ($is_synced === 'y') {
-            $list_fields['mc_list_action'] = array(
-                'type' => 'html',
-                'content' => '<a class="btn action" href="' . $resync_url . '">RESYNC</a>',
-            );
-        }
-
-        // Setup standard fields
-        $vars['sections'] = array(
-            array(
-                array(
-                    'title' => 'mc_list_id',
-                    'desc' => 'mc_list_id_desc',
-                    'fields' => $list_fields,
-                ),
-            ),
-            'store_settings' => array(
-                array( // store name
-                    'title' => 'mc_store_name',
-                    'desc' => 'mc_store_name_desc',
-                    'fields' => array(
-                        'mc_store_name' => array(
-                            'type' => 'text',
-                            'value' => $this->get_general_setting('mc_store_name'),
-                            'required' => TRUE
-                        )
-                    )
-                ),
-                array( // store email
-                    'title' => 'mc_store_email',
-                    'desc' => 'mc_store_email_desc',
-                    'fields' => array(
-                        'mc_store_email' => array(
-                            'type' => 'text',
-                            'value' => $this->get_general_setting('mc_store_email'),
-                            'required' => TRUE
-                        )
-                    )
-                ),
-                array( // store street address
-                    'title' => 'mc_store_address',
-                    'desc' => 'mc_store_address_desc',
-                    'fields' => array(
-                        'mc_store_address' => array(
-                            'type' => 'text',
-                            'value' => $this->get_general_setting('mc_store_address'),
-                            'required' => TRUE
-                        )
-                    )
-                ),
-                array( // store city
-                    'title' => 'mc_store_city',
-                    'desc' => 'mc_store_city_desc',
-                    'fields' => array(
-                        'mc_store_city' => array(
-                            'type' => 'text',
-                            'value' => $this->get_general_setting('mc_store_city'),
-                            'required' => TRUE
-                        )
-                    )
-                ),
-                array( // store state
-                    'title' => 'mc_store_state',
-                    'desc' => 'mc_store_state_desc',
-                    'fields' => array(
-                        'mc_store_state' => array(
-                            'type' => 'text',
-                            'value' => $this->get_general_setting('mc_store_state'),
-                            'required' => TRUE
-                        )
-                    )
-                ),
-                array( // store postal code
-                    'title' => 'mc_store_postal_code',
-                    'desc' => 'mc_store_postal_code_desc',
-                    'fields' => array(
-                        'mc_store_postal_code' => array(
-                            'type' => 'text',
-                            'value' => $this->get_general_setting('mc_store_postal_code'),
-                            'required' => TRUE
-                        )
-                    )
-                ),
-                array( // store name
-                    'title' => 'mc_store_country',
-                    'desc' => 'mc_store_country_desc',
-                    'fields' => array(
-                        'mc_store_country' => array(
-                            'type' => 'text',
-                            'value' => $this->get_general_setting('mc_store_country'),
-                            'required' => TRUE
-                        )
-                    )
-                ),
-                array( // store name
-                    'title' => 'mc_store_phone',
-                    'desc' => 'mc_store_phone_desc',
-                    'fields' => array(
-                        'mc_store_phone' => array(
-                            'type' => 'text',
-                            'value' => $this->get_general_setting('mc_store_phone'),
-                            'required' => TRUE
-                        )
-                    )
-                ),
-            ),
-
-            'locale_settings' => array(
-                array(
-                    'title' => 'mc_locale',
-                    'desc' => 'mc_locale_desc',
-                    'fields' => array(
-                        'mc_locale' => array(
-                            'type' => 'select',
-                            'choices' => $this->locale_list,
-                            'value' => $this->get_general_setting('mc_locale')
-                        )
-                    ),
-                ),
-                array(
-                    'title' => 'mc_currency',
-                    'desc' => 'mc_currency_desc',
-                    'fields' => array(
-                        'mc_currency' => array(
-                            'type' => 'select',
-                            'choices' => $this->currency_list,
-                            'value' => $this->get_general_setting('mc_currency')
-                        )
-                    ),
-                ),
-                array(
-                    'title' => 'mc_timezone',
-                    'desc' => 'mc_timezone_desc',
-                    'fields' => array(
-                        'mc_timezone' => array(
-                            'type' => 'select',
-                            'choices' => $this->timezone_list,
-                            'value' => $this->get_general_setting('mc_timezone')
-                        )
-                    ),
-                ),
-            ),
-        );
-
         return array(
-            'body' => ee('View')->make('ee:_shared/form_with_box')->render($vars),
-            'breadcrumb' => array(
-                ee('CP/URL', 'addons/settings/mc_cart')->compile() => lang('mc_cart_settings_heading')
-            ),
-            'heading' => lang('mc_cart_store_settings_heading')
+            'is_synced' => $is_synced,
+            'list_id' => $list_id,
+            'list_id_array' => $list_id_array,
         );
     }
 
@@ -461,7 +497,7 @@ class Mc_cart_mcp
             ee()->settings_model->save_settings($data);
 
             ee()->functions->redirect(ee('CP/URL')->make(
-                'addons/settings/mc_cart/store_settings'
+                'addons/settings/mc_cart/mc_store_settings'
             ));
         }
         else {            // ApiKey validation failed
@@ -511,7 +547,7 @@ class Mc_cart_mcp
                 ->defer();
 
             ee()->functions->redirect(ee('CP/URL')->make(
-                'addons/settings/mc_cart/store_settings'
+                'addons/settings/mc_cart/mc_store_settings'
             ));
         }
         else {
@@ -523,10 +559,6 @@ class Mc_cart_mcp
                 ->withTitle(lang('mc_store_not_synced'))
                 ->now();
         }
-
-        /* ee()->functions->redirect(ee('CP/URL')->make(
-            'addons/settings/mc_cart/store_settings'
-        )); */
     }
 
     // Get general setting from $general_settings.
@@ -549,26 +581,8 @@ class Mc_cart_mcp
 
         ee()->settings_model->save_settings($data);
         ee()->functions->redirect(ee('CP/URL')->make(
-            'addons/settings/mc_cart/store_settings'
+            'addons/settings/mc_cart/mc_store_settings'
         ));
-    }
-
-    public function duplicate()
-    {
-        if ($form_id = ee()->input->get('form_id'))
-        {
-            $form = $form = ee('Model')->get('subscriber:SubscriberForm')
-                ->filter('id', $form_id)
-                ->first();
-
-            // Actually clone it
-            $form = ee('Model')->make($form->getName(), $form->toArray())->save();
-
-            ee()->functions->redirect(ee('CP/URL')->make(
-                'addons/settings/subscriber/view',
-                array('form_id' => $form->id)
-            ));
-        }
     }
 
     // -----------------------------------------------------------------------------

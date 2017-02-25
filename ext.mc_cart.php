@@ -44,6 +44,7 @@ class Mc_cart_ext
         'mc_locale' => 'en',
         'mc_currency' => 'USD',
         'mc_store_sync' => 'n',
+        'mc_product_fields' => '',
     );
 
     public function __construct($settings = '') {
@@ -163,77 +164,45 @@ class Mc_cart_ext
         return true;
     }
 
+
     //
-    // Get `Products` field group id
+    // Get product fields from MC
     //
-    private function get_products_field_group_id() {
+    private function get_product_channel_fields($product_channel_id = null) {
+
         $ret = array();
 
-        $field_groups = ee('Model')->get('ChannelFieldGroup')
-            ->filter('group_name', 'Products')
-            ->filter('site_id', ee()->config->item('site_id'))
-            ->all();
-        foreach ($field_groups as $group) {
-            $ret[] = $group->group_id;
+        if ($this->get_general_setting('mc_product_fields') == '') {
+            $mc_channel_fields = array();
+        }
+        else {
+            $mc_channel_fields = unserialize($this->get_general_setting('mc_product_fields'));
         }
 
-        if (count($ret) == 0) return false;
-
-        return $ret;
-    }    
-
-    //
-    // Get products channel fields parameters
-    //
-    private function get_products_channel_fields($channel_id) {
-        $query = ee()->channel_model->get_channels(NULL, array(), array(array('channel_id' => $channel_id)));
-        $result = $query->result();
-
-        if (count($result) == 0) return false;
-
-        $ret = array();
-
-        $query = ee()->field_model->get_fields($result[0]->field_group);
-        foreach ($query->result() as $field) {
-            switch ($field->field_name) {
-                case 'product_description':
-                case 'product_thumbnail':
-                case 'product_detail_image':
-                case 'product_price':
-                case 'product_inventory':
-                case 'product_sku':
-                    $ret[$field->field_name] = 'field_id_'.$field->field_id;
-                    break;
+        foreach (ee()->cartthrob->store->config('product_channel_fields') as $id => $fields) {
+            if (isset($mc_channel_fields[$id])) {
+                $ret[$id] = $mc_channel_fields[$id];
+            }
+            else {
+                $ret[$id] = array(
+                    'price' => isset($fields['price']) ? $fields['price'] : null,
+                    'shipping' => isset($fields['shipping']) ? $fields['shipping'] : null,
+                    'weight' => isset($fields['weight']) ? $fields['weight'] : null,
+                    'inventory' => isset($fields['inventory']) ? $fields['inventory'] : null,
+                    'description' => null,
+                    'image_url' => null,
+                );
             }
         }
 
-        return $ret;
+        if ($product_channel_id == null)
+            return $ret;
+
+        if (isset($ret[$product_channel_id]))
+            return $ret[$product_channel_id];
+
+        return false;
     }
-
-    //
-    // Get all of the `Products` channels (returns `channel_id`)
-    //
-    private function get_products_channels() {
-
-        //$product_channels = ee()->cartthrob->store->config('product_channels');
-
-        $groups = $this->get_products_field_group_id();
-
-        if ($groups == false) return false;
-
-        $ret = array();
-
-        $query = ee()->channel_model->get_channels(NULL, array(), array(array('field_group' => $groups)));
-        $result = $query->result();
-        foreach($result as $key => $row) {
-            $ret[] = $row->channel_id;
-        }
-
-        if (count($ret) == 0) return false;
-
-        return $ret;
-    }
-
 
     //
     // Reassign the template group and template loaded for parsing. 
@@ -331,7 +300,7 @@ class Mc_cart_ext
         //
         // Get products channel id
         //
-        $products_channel_id_array = $this->get_products_channels();
+        $products_channel_id_array = ee()->cartthrob->store->config('product_channels');
         if ($products_channel_id_array == false)    // Check whether the product channel exists
             return false;
 
@@ -342,17 +311,31 @@ class Mc_cart_ext
             //
             // Get the field_id_x
             //
-            $fields = $this->get_products_channel_fields($values['channel_id']);
+            $fields = $this->get_product_channel_fields($values['channel_id']);
 
-            $product_description_id = isset($fields['product_description']) ? $fields['product_description'] : '';
-            $product_thumbnail_id = isset($fields['product_thumbnail']) ? $fields['product_thumbnail'] : '';
-            $product_detail_image_id = isset($fields['product_detail_image']) ? $fields['product_detail_image'] : '';
-            $product_price_id = isset($fields['product_price']) ? $fields['product_price'] : '';
-            $product_inventory_id = isset($fields['product_inventory']) ? $fields['product_inventory'] : '';
-            $product_sku_id = isset($fields['product_sku']) ? $fields['product_sku'] : '';
+            $product_description_id = 'field_id_'.(isset($fields['description']) ? $fields['description'] : '');
+            $product_thumbnail_id = 'field_id_'.(isset($fields['image_url']) ? $fields['image_url'] : '');
+            $product_detail_image_id = 'field_id_'.(isset($fields['detail_image_url']) ? $fields['detail_image_url'] : '');
+            $product_price_id = 'field_id_'.(isset($fields['price']) ? $fields['price'] : '');
+            $product_inventory_id = 'field_id_'.(isset($fields['inventory']) ? $fields['inventory'] : '');
+            $product_sku_id = 'field_id_'.(isset($fields['sku']) ? $fields['sku'] : '');
+
+            //
+            // Get the values of field_id_x
+            //
+            $product_id = $values['entry_id'];
+            $product_title = $values['title'];
+            $product_url = $values['url_title'];
+            $product_entry_date = $values['entry_date'];
+            $product_status = $values['status'];
+            $product_description = isset($values[$product_description_id]) ? $values[$product_description_id] : '';
+            $product_thumbnail = isset($values[$product_thumbnail_id]) ? $values[$product_thumbnail_id] : '';
+            $product_detail_image = isset($values[$product_detail_image_id]) ? $values[$product_detail_image_id] : '';
+            $product_price = isset($values[$product_price_id]) ? $values[$product_price_id] : '';
+            $product_inventory = isset($values[$product_inventory_id]) ? $values[$product_inventory_id] : '';
+            $product_sku = isset($values[$product_sku_id]) ? $values[$product_sku_id] : '';
 
             $store_id = mailchimp_get_store_id();
-            $product_id = $values['entry_id'];
 
             if ($this->api_loader->getStoreProduct($store_id, $product_id)) {
                 $this->api_loader->deleteStoreProduct($store_id, $product_id);
@@ -362,25 +345,23 @@ class Mc_cart_ext
                 $product = new MailChimp_WooCommerce_Product();
 
                 $product->setId($product_id);
-                $product->setTitle($values['title']);
-                $product->setHandle($values['title']);
-                $product->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
-                $product->setDescription($values[$product_description_id]);
-                $product->setPublishedAtForeign(mailchimp_date_utc($values['entry_date']));
-                $product->setUrl($values['url_title']);
+                $product->setTitle($product_title);
+                $product->setHandle($product_title);
+                $product->setImageUrl($this->parse_file_server_paths($product_thumbnail));
+                $product->setDescription($product_description);
+                $product->setPublishedAtForeign(mailchimp_date_utc($product_entry_date));
+                $product->setUrl($product_url);
 
                 // Create a new Variant for the product
                 $variant = new MailChimp_WooCommerce_ProductVariation();
                 $variant->setId($product_id);
-                $variant->setTitle($values['title']);
-                $variant->setUrl($values['url_title']);
-                $variant->setPrice($values[$product_price_id]);
-                $variant->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
-                if (!empty($values[$product_inventory_id])) 
-                    $variant->setInventoryQuantity($values[$product_inventory_id]);
-                if (!empty($values[$product_sku_id])) 
-                    $variant->setSku($values[$product_sku_id]);
-                if ($values['status'] == 'open') $variant->setVisibility('visible');
+                $variant->setTitle($product_title);
+                $variant->setUrl($product_url);
+                $variant->setPrice($product_price);
+                $variant->setImageUrl($this->parse_file_server_paths($product_thumbnail));
+                if (!empty($product_inventory)) $variant->setInventoryQuantity($product_inventory);
+                if (!empty($product_sku)) $variant->setSku($product_sku);
+                if ($product_status == 'open') $variant->setVisibility('visible');
 
                 $product->addVariant($variant);
 
@@ -423,7 +404,7 @@ class Mc_cart_ext
         //
         // Get products channel id
         //
-        $products_channel_id_array = $this->get_products_channels();
+        $products_channel_id_array = ee()->cartthrob->store->config('product_channels');
         if ($products_channel_id_array == false)    // Check whether the product channel exists
             return false;
 
@@ -434,17 +415,32 @@ class Mc_cart_ext
             //
             // Get the field_id_x
             //
-            $fields = $this->get_products_channel_fields($values['channel_id']);
+            $fields = $this->get_product_channel_fields($values['channel_id']);
 
-            $product_description_id = isset($fields['product_description']) ? $fields['product_description'] : '';
-            $product_thumbnail_id = isset($fields['product_thumbnail']) ? $fields['product_thumbnail'] : '';
-            $product_detail_image_id = isset($fields['product_detail_image']) ? $fields['product_detail_image'] : '';
-            $product_price_id = isset($fields['product_price']) ? $fields['product_price'] : '';
-            $product_inventory_id = isset($fields['product_inventory']) ? $fields['product_inventory'] : '';
-            $product_sku_id = isset($fields['product_sku']) ? $fields['product_sku'] : '';
+            $product_description_id = 'field_id_'.(isset($fields['description']) ? $fields['description'] : '');
+            $product_thumbnail_id = 'field_id_'.(isset($fields['image_url']) ? $fields['image_url'] : '');
+            $product_detail_image_id = 'field_id_'.(isset($fields['detail_image_url']) ? $fields['detail_image_url'] : '');
+            $product_price_id = 'field_id_'.(isset($fields['price']) ? $fields['price'] : '');
+            $product_inventory_id = 'field_id_'.(isset($fields['inventory']) ? $fields['inventory'] : '');
+            $product_sku_id = 'field_id_'.(isset($fields['sku']) ? $fields['sku'] : '');
+
+
+            //
+            // Get the values of field_id_x
+            //
+            $product_id = $values['entry_id'];
+            $product_title = $values['title'];
+            $product_url = $values['url_title'];
+            $product_entry_date = $values['entry_date'];
+            $product_status = $values['status'];
+            $product_description = isset($values[$product_description_id]) ? $values[$product_description_id] : '';
+            $product_thumbnail = isset($values[$product_thumbnail_id]) ? $values[$product_thumbnail_id] : '';
+            $product_detail_image = isset($values[$product_detail_image_id]) ? $values[$product_detail_image_id] : '';
+            $product_price = isset($values[$product_price_id]) ? $values[$product_price_id] : '';
+            $product_inventory = isset($values[$product_inventory_id]) ? $values[$product_inventory_id] : '';
+            $product_sku = isset($values[$product_sku_id]) ? $values[$product_sku_id] : '';
 
             $store_id = mailchimp_get_store_id();
-            $product_id = $values['entry_id'];
 
             mc_log('mc_after_channel_entry_save => product_id : '. $product_id);    // chen_debug
 
@@ -457,23 +453,23 @@ class Mc_cart_ext
                     $product = new MailChimp_WooCommerce_Product();
 
                     $product->setId($product_id);
-                    $product->setTitle($values['title']);
-                    $product->setHandle($values['title']);
-                    $product->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
-                    $product->setDescription($values[$product_description_id]);
-                    $product->setPublishedAtForeign(mailchimp_date_utc($values['entry_date']));
-                    $product->setUrl($values['url_title']);
+                    $product->setTitle($product_title);
+                    $product->setHandle($product_title);
+                    $product->setImageUrl($this->parse_file_server_paths($product_thumbnail));
+                    $product->setDescription($product_description);
+                    $product->setPublishedAtForeign(mailchimp_date_utc($product_entry_date));
+                    $product->setUrl($product_url);
 
                     // Create a new Variant for the product
                     $variant = new MailChimp_WooCommerce_ProductVariation();
                     $variant->setId($product_id);
-                    $variant->setTitle($values['title']);
-                    $variant->setUrl($values['url_title']);
-                    $variant->setPrice($values[$product_price_id]);
-                    $variant->setImageUrl($this->parse_file_server_paths($values[$product_thumbnail_id]));
-                    if (!empty($values[$product_inventory_id])) $variant->setInventoryQuantity($values[$product_inventory_id]);
-                    if (!empty($values[$product_sku_id])) $variant->setSku($values[$product_sku_id]);
-                    if ($values['status'] == 'open') $variant->setVisibility('visible');
+                    $variant->setTitle($product_title);
+                    $variant->setUrl($product_url);
+                    $variant->setPrice($product_price);
+                    $variant->setImageUrl($this->parse_file_server_paths($product_thumbnail));
+                    if (!empty($product_inventory)) $variant->setInventoryQuantity($product_inventory);
+                    if (!empty($product_sku)) $variant->setSku($product_sku);
+                    if ($product_status == 'open') $variant->setVisibility('visible');
 
                     $product->addVariant($variant);
 

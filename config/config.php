@@ -4,5 +4,14 @@ $config['mc_cart_default_settings'] = array(
     'customer_info_defaults' => array(),
     'mc_api_key' => '',
     'mc_list_id' => '',
-    'opt_in_message' => 'Subscribe to our newsletter'
+    'opt_in_message' => 'Subscribe to our newsletter',
+
+    'product_channel_fields' => array(
+        'price',
+        'description',
+        'image_url',
+        'shipping',
+        'weight',
+        'inventory',
+    ),
 );
