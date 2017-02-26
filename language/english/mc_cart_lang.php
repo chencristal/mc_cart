@@ -85,5 +85,6 @@ $lang = array(
     // CP STORE SETTINGS
     'nav_mc_store_settings' => 'Mailchimp Store Settings',
     'mc_store_settings_panel' => 'Store Settings',
+    'mc_fields_required' => 'Some fields are required.',
 
 );

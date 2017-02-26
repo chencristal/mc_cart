@@ -129,10 +129,10 @@ class Mc_cart_upd {
             ->delete('extensions');
 
         //should we do this?
-        /*foreach (array_keys($this->tables) as $table)
+        foreach (array_keys($this->tables) as $table)
         {
             ee()->dbforge->drop_table($table);
-        }*/
+        }
 
         return TRUE;
     }

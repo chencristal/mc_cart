@@ -12,6 +12,12 @@
 
 <div class="clear_left shun"></div>
 
+<?php if ($session->flashdata('message_success')) : ?>
+    <div id="ct_system_error">
+        <h4><?=$session->flashdata('message_success')?></h4>
+    </div>
+<?php endif; ?>
+
 <?=$form_open?>
 
 <div id="cartthrob_settings_content">

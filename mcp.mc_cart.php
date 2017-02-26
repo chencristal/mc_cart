@@ -84,7 +84,23 @@ class Mc_cart_mcp
     // ------------------------------------------------------------------------
 
     private function initialize() {
-        $this->general_settings = ee()->settings_model->get_all_settings();
+        //
+        // Initialize the default settings with cartthrob
+        //
+        $this->default_settings['mc_store_name']        = ee()->get_settings->get_setting("cartthrob", "store_name");
+        $this->default_settings['mc_store_address']     = ee()->get_settings->get_setting("cartthrob", "store_address1");
+        $this->default_settings['mc_store_city']        = ee()->get_settings->get_setting("cartthrob", "store_city");
+        $this->default_settings['mc_store_state']       = ee()->get_settings->get_setting("cartthrob", "store_state");
+        $this->default_settings['mc_store_postal_code'] = ee()->get_settings->get_setting("cartthrob", "store_zip");
+        $this->default_settings['mc_store_country']     = ee()->get_settings->get_setting("cartthrob", "store_country");
+        $this->default_settings['mc_store_phone']       = ee()->get_settings->get_setting("cartthrob", "store_phone");
+        $this->default_settings['mc_store_email']       = ee()->session->userdata('email');
+
+
+        //
+        // Get general settings from the db
+        //
+        $this->general_settings = ee()->settings_model->get_all_settings($this->default_settings);
 
         if ($this->initialized === TRUE)
             return;
@@ -114,17 +130,6 @@ class Mc_cart_mcp
                 ee()->settings_model->save_setting('mc_store_sync', 'n');
             }
         }
-
-        //
-        // Initialize the default settings with cartthrob
-        //
-        $this->default_settings['mc_store_name']        = ee()->get_settings->get_setting("cartthrob", "store_name");
-        $this->default_settings['mc_store_address']     = ee()->get_settings->get_setting("cartthrob", "store_address1");
-        $this->default_settings['mc_store_city']        = ee()->get_settings->get_setting("cartthrob", "store_city");
-        $this->default_settings['mc_store_state']       = ee()->get_settings->get_setting("cartthrob", "store_state");
-        $this->default_settings['mc_store_postal_code'] = ee()->get_settings->get_setting("cartthrob", "store_zip");
-        $this->default_settings['mc_store_country']     = ee()->get_settings->get_setting("cartthrob", "store_country");
-        $this->default_settings['mc_store_phone']       = ee()->get_settings->get_setting("cartthrob", "store_phone");
 
         //
         // Initialize the mailchimp api class
@@ -251,12 +256,14 @@ class Mc_cart_mcp
         $this->initialize();
 
         $return = ee()->input->get('return');
+        $message = sprintf('%s %s', lang('mc_cart_module_name'), lang('settings_saved'));
 
-        if ($return == 'mc_product_settings') {
+        if ($return == 'mc_product_settings') {     // PRODUCT CHANNEL SETTINGS
+
             ee()->settings_model->save_setting('mc_product_fields',
                 serialize(ee()->input->post('product_channel_fields')));
         }
-        else if ($return == 'mc_store_settings') {
+        else if ($return == 'mc_store_settings') {  // MAILCHIMP STORE SETTINGS
             // Validate the form
             if (!empty($_POST)) {
                 $validator = ee('Validation')->make();
@@ -279,6 +286,7 @@ class Mc_cart_mcp
                     $this->save_store_settings();
                 }
                 else {
+                    $message = sprintf('%s : %s', lang('mc_cart_module_name'), lang('mc_fields_required'));
                     $vars['errors'] = $result;
                     ee('CP/Alert')->makeInline('shared-form')
                         ->asIssue()
@@ -288,9 +296,8 @@ class Mc_cart_mcp
             }
         }
 
-        if ($set_success_message)
-        {
-            ee()->session->set_flashdata('message_success', sprintf('%s %s %s', lang('mc_cart_module_name'), lang('nav_'.$return), lang('settings_saved')));
+        if ($set_success_message) {
+            ee()->session->set_flashdata('message_success', $message);
         }
 
         ee()->functions->redirect(ee('CP/URL')->make('addons/settings/mc_cart/'.$return));
@@ -406,6 +413,7 @@ class Mc_cart_mcp
             'currency_list' => $this->currency_list,
             'timezone_list' => $this->timezone_list,
             'mc_mcp' => $this,
+            'more' => $more,
             'form_open' => form_open(ee('CP/URL')->make('addons/settings/mc_cart/quick_save', array('return' => ee()->uri->segment(5)))),
         );
 

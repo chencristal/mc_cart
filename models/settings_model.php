@@ -55,8 +55,8 @@ class Settings_model extends CI_Model
         }
     }
 
-    public function get_all_settings() {
-        $ret = array();
+    public function get_all_settings($defaults = array()) {
+        $ret = $defaults;
 
         $this->db->select("*");
         $result = $this->db->get($this->table)->result_array();

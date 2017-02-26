@@ -66,9 +66,22 @@ class Mc_cart_ext
 
     private function initialize() {
         //
-        // Get the generic setting values
+        // Initialize the default settings with cartthrob
         //
-        $this->general_settings = ee()->settings_model->get_all_settings();
+        $this->default_settings['mc_store_name']        = ee()->get_settings->get_setting("cartthrob", "store_name");
+        $this->default_settings['mc_store_address']     = ee()->get_settings->get_setting("cartthrob", "store_address1");
+        $this->default_settings['mc_store_city']        = ee()->get_settings->get_setting("cartthrob", "store_city");
+        $this->default_settings['mc_store_state']       = ee()->get_settings->get_setting("cartthrob", "store_state");
+        $this->default_settings['mc_store_postal_code'] = ee()->get_settings->get_setting("cartthrob", "store_zip");
+        $this->default_settings['mc_store_country']     = ee()->get_settings->get_setting("cartthrob", "store_country");
+        $this->default_settings['mc_store_phone']       = ee()->get_settings->get_setting("cartthrob", "store_phone");
+        $this->default_settings['mc_store_email']       = ee()->session->userdata('email');
+
+
+        //
+        // Get general settings from the db
+        //
+        $this->general_settings = ee()->settings_model->get_all_settings($this->default_settings);
 
         if ($this->initialized === TRUE)
             return;
@@ -89,17 +102,6 @@ class Mc_cart_ext
                 ee()->settings_model->save_setting('mc_store_sync', 'n');
             }
         }
-
-        //
-        // Initialize the default settings with cartthrob
-        //
-        $this->default_settings['mc_store_name'] = ee()->get_settings->get_setting("cartthrob","store_name");
-        $this->default_settings['mc_store_address'] = ee()->get_settings->get_setting("cartthrob","store_address1");
-        $this->default_settings['mc_store_city'] = ee()->get_settings->get_setting("cartthrob","store_city");
-        $this->default_settings['mc_store_state'] = ee()->get_settings->get_setting("cartthrob","store_state");
-        $this->default_settings['mc_store_postal_code'] = ee()->get_settings->get_setting("cartthrob","store_zip");
-        $this->default_settings['mc_store_country'] = ee()->get_settings->get_setting("cartthrob","store_country");
-        $this->default_settings['mc_store_phone'] = ee()->get_settings->get_setting("cartthrob","store_phone");
 
         //
         // Initialize the mailchimp api class
