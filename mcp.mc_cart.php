@@ -149,6 +149,9 @@ class Mc_cart_mcp
 
         $ret = array();
 
+        //
+        // Get the mc_product_fields from the DB
+        //
         if ($this->get_general_setting('mc_product_fields') == '') {
             $mc_channel_fields = array();
         }
@@ -156,7 +159,14 @@ class Mc_cart_mcp
             $mc_channel_fields = unserialize($this->get_general_setting('mc_product_fields'));
         }
 
+        //
+        // Iterate the `product_channel_fields` of cartthrob settings and Check the channel fields
+        //
         foreach ($this->cartthrob_settings['product_channel_fields'] as $id => $fields) {
+            //
+            // $id is the Channel ID.
+            //
+
             if (isset($mc_channel_fields[$id])) {
                 $ret[$id] = $mc_channel_fields[$id];
             }
@@ -168,6 +178,7 @@ class Mc_cart_mcp
                     'inventory' => isset($fields['inventory']) ? $fields['inventory'] : null,
                     'description' => null,
                     'image_url' => null,
+                    'vendor' => null,
                 );
             }
         }

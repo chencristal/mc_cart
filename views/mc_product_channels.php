@@ -167,6 +167,29 @@
 
             </td>
         </tr>
+
+        <tr class="<?php echo alternator('even', 'odd');?>">
+            <td>
+                <strong><?php echo lang('mc_product_channel_vendor_field'); ?></strong><br />
+                <?php echo lang('mc_product_channel_vendor_field_description'); ?>
+            </td>
+            <td>
+                <?php
+
+                $attrs = "class='ct_product_column product_vendor product_channel_fields'";
+
+                $curr = "";
+                if ( isset($channel_fields[$product_channel]['vendor']) && $channel_fields[$product_channel]['vendor'] != null)
+                {
+                    $curr= $channel_fields[$product_channel]['vendor'];
+                }
+
+                echo form_input('product_channel_fields['.$product_channel.'][vendor]', $curr, $attrs);
+
+                ?>
+
+            </td>
+        </tr>
         </tbody>
     </table>
 <?php endforeach; ?>

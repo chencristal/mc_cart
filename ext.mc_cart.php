@@ -193,6 +193,7 @@ class Mc_cart_ext
                     'inventory' => isset($fields['inventory']) ? $fields['inventory'] : null,
                     'description' => null,
                     'image_url' => null,
+                    'vendor' => null,
                 );
             }
         }
@@ -336,6 +337,13 @@ class Mc_cart_ext
             $product_price = isset($values[$product_price_id]) ? $values[$product_price_id] : '';
             $product_inventory = isset($values[$product_inventory_id]) ? $values[$product_inventory_id] : '';
             $product_sku = isset($values[$product_sku_id]) ? $values[$product_sku_id] : '';
+            $product_vendor = isset($fields['vendor']) ? $fields['vendor'] : '';
+
+            // Get the product category from the entry
+            $product_cat = $this->get_categories_from_entry($entry);
+            if (empty($product_cat)) $product_type = '';
+            else $product_type = implode('|', $product_cat);
+
 
             $store_id = mailchimp_get_store_id();
 
@@ -353,6 +361,8 @@ class Mc_cart_ext
                 $product->setDescription($product_description);
                 $product->setPublishedAtForeign(mailchimp_date_utc($product_entry_date));
                 $product->setUrl($product_url);
+                $product->setType($product_type);
+                $product->setVendor($product_vendor);
 
                 // Create a new Variant for the product
                 $variant = new MailChimp_WooCommerce_ProductVariation();
@@ -389,6 +399,35 @@ class Mc_cart_ext
 
 
     //
+    // Get category names array from a entry (product)
+    //
+    private function get_categories_from_entry($entry) {
+
+        $ret = array();
+
+        $cat_groups = $entry->getStructure()->getCategoryGroups();
+
+        foreach ($cat_groups as $cat_group) {
+            $categories = explode('|', $entry->getProperty('cat_group_id_'.$cat_group->group_id));
+            foreach ($cat_group->Categories as $cat) {
+                if (in_array($cat->cat_id, $categories)) {
+                    /* $ret[] = array(
+                        'cat_group_id' => $cat_group->group_id,
+                        'cat_order' => $cat->cat_order,
+                        'cat_name' => $cat->cat_name,
+                        'cat_url_title' => $cat->cat_url_title,
+                        'cat_description' => $cat->cat_description,
+                    ); */
+                    $ret[] = $cat->cat_name;
+                }
+            }
+        }
+
+        return $ret;
+    }
+
+
+    //
     // Called before the channel entry object is inserted or updated. (refer to `save_post`)
     // Changes made to the object will be saved automatically.
     //
@@ -398,10 +437,9 @@ class Mc_cart_ext
 
         if ($this->check_store_sync() == false) return false;
 
-        // mc_log(get_class_methods(get_class($entry->getStructure()->getFields())));
+        //mc_log(get_class_methods(get_class($entry->getStructure())));
         // mc_log($entry->getStructure()->getFields());
         // mc_log($entry->getStructure()->toArray());    line: 11599
-
 
         //
         // Get products channel id
@@ -441,6 +479,13 @@ class Mc_cart_ext
             $product_price = isset($values[$product_price_id]) ? $values[$product_price_id] : '';
             $product_inventory = isset($values[$product_inventory_id]) ? $values[$product_inventory_id] : '';
             $product_sku = isset($values[$product_sku_id]) ? $values[$product_sku_id] : '';
+            $product_vendor = isset($fields['vendor']) ? $fields['vendor'] : '';
+
+            // Get the product category from the entry
+            $product_cat = $this->get_categories_from_entry($entry);
+            if (empty($product_cat)) $product_type = '';
+            else $product_type = implode('|', $product_cat);
+
 
             $store_id = mailchimp_get_store_id();
 
@@ -461,6 +506,8 @@ class Mc_cart_ext
                     $product->setDescription($product_description);
                     $product->setPublishedAtForeign(mailchimp_date_utc($product_entry_date));
                     $product->setUrl($product_url);
+                    $product->setType($product_type);
+                    $product->setVendor($product_vendor);
 
                     // Create a new Variant for the product
                     $variant = new MailChimp_WooCommerce_ProductVariation();

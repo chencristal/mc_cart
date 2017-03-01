@@ -81,6 +81,8 @@ $lang = array(
     'mc_product_channel_weight_field_description' => 'If you use weight to figure shipping for each product, choose the product weight field here.',
     'mc_product_channel_inventory_field' => 'Product Inventory Field Name',
     'mc_product_channel_inventory_field_description' => 'Product Inventory Field Name',
+    'mc_product_channel_vendor_field' => 'Product Vendor Name',
+    'mc_product_channel_vendor_field_description' => 'Product Vendor Name',
 
     // CP STORE SETTINGS
     'nav_mc_store_settings' => 'Mailchimp Store Settings',
